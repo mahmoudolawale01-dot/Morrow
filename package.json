@@ -1,0 +1,11 @@
+{
+  "name": "cline-static-site",
+  "private": true,
+  "scripts": {
+    "start": "node dev.js",
+    "frontend": "node server.js",
+    "backend": "node backend-server.js",
+    "smoke": "node smoke-test.js",
+    "flow-check": "node customer-flow-check.js"
+  }
+}

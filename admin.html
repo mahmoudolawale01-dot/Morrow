@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Morrow Objects catalog administration." />
+  <title>Catalog Admin | Morrow Objects</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600&family=Playfair+Display:wght@500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body class="workspace-body">
+  <section class="admin-auth" id="admin-auth" aria-labelledby="admin-auth-title">
+    <div class="admin-auth-panel">
+      <p class="eyebrow">Morrow Objects</p>
+      <h1 id="admin-auth-title">Catalog workspace.</h1>
+      <p id="admin-auth-intro">Create an admin password for this browser to continue.</p>
+      <form id="admin-auth-form">
+        <label for="admin-username">Username</label>
+        <input id="admin-username" name="username" autocomplete="username" required />
+        <label for="admin-password">Password</label>
+        <input id="admin-password" name="password" type="password" minlength="8" autocomplete="new-password" required />
+        <label id="admin-confirm-label" for="admin-confirm-password">Confirm password</label>
+        <input id="admin-confirm-password" name="confirmPassword" type="password" minlength="8" autocomplete="new-password" required />
+        <p class="admin-auth-message" id="admin-auth-message" role="alert" aria-live="polite"></p>
+        <button class="primary-button" type="submit" id="admin-auth-submit">Create admin account <span>→</span></button>
+      </form>
+      <p class="admin-auth-note">This browser-only demo gate is not suitable for production or shared hosting.</p>
+    </div>
+  </section>
+  <header class="workspace-header admin-protected" hidden><a class="wordmark" href="index.html">morrow<span>.</span></a><div><span class="workspace-label">Catalog workspace</span><a class="workspace-store-link" href="shop.html">View store ↗</a><button class="workspace-store-link admin-logout" id="admin-logout" type="button">Log out</button></div></header>
+  <main class="workspace admin-protected" id="main-content" hidden>
+    <section class="workspace-intro"><div><p class="eyebrow">Admin / Catalog</p><h1>Shape the collection.</h1><p>Manage products, ordering, and seller submissions from one working view.</p></div><button class="workspace-action" id="reset-catalog" type="button">Reset demo catalog</button></section>
+    <nav class="workspace-tabs" aria-label="Workspace views"><button class="workspace-tab active" type="button" data-view="products">Products</button><button class="workspace-tab" type="button" data-view="orders">Orders</button><button class="workspace-tab" type="button" data-view="users">Users</button><button class="workspace-tab" type="button" data-view="activity">Activity</button><button class="workspace-tab" type="button" data-view="submissions">Seller submissions</button></nav>
+    <section class="workspace-panel" data-panel="products"><div class="panel-heading"><div><p class="eyebrow">Live catalog</p><h2 id="product-count">9 products</h2></div><button class="primary-button" id="new-product" type="button">Add product <span>+</span></button></div><div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>Product</th><th>Category</th><th>Price</th><th>Status</th><th>Order</th><th><span class="sr-only">Actions</span></th></tr></thead><tbody id="admin-products"></tbody></table></div></section>
+    <section class="workspace-panel" data-panel="orders" hidden><div class="panel-heading"><div><p class="eyebrow">Purchase history</p><h2 id="order-count">0 orders</h2></div></div><div id="admin-orders" class="admin-orders"></div></section>
+    <section class="workspace-panel" data-panel="users" hidden><div class="panel-heading"><div><p class="eyebrow">Account directory</p><h2 id="user-count">0 users</h2></div></div><div id="admin-users" class="admin-users"></div></section>
+    <section class="workspace-panel" data-panel="activity" hidden><div class="panel-heading"><div><p class="eyebrow">Access records</p><h2 id="activity-count">0 events</h2></div></div><div id="admin-activity" class="admin-activity"></div></section>
+    <section class="workspace-panel" data-panel="submissions" hidden><div class="panel-heading"><div><p class="eyebrow">Seller queue</p><h2 id="submission-count">0 pending submissions</h2></div></div><div id="admin-submissions" class="submission-list"></div></section>
+  </main>
+  <dialog class="workspace-dialog" id="product-dialog"><form id="product-form"><div class="dialog-heading"><div><p class="eyebrow">Catalog item</p><h2 id="form-title">Add product</h2></div><button class="dialog-close" id="close-product-dialog" type="button" aria-label="Close">×</button></div><input id="product-id" type="hidden" /><label for="product-name">Name</label><input id="product-name" required /><label for="product-category">Category</label><select id="product-category"><option value="ceramics">Ceramics</option><option value="textiles">Textiles</option><option value="lighting">Lighting</option></select><label for="product-price">Price</label><input id="product-price" type="number" min="0" step="1" required /><label for="product-description">Description</label><textarea id="product-description" rows="4" required></textarea><label for="product-image">Image URL</label><input id="product-image" type="url" required /><label for="product-meta">Material / meta</label><input id="product-meta" required /><label class="check-row"><input id="product-published" type="checkbox" checked /> Published in store</label><div class="dialog-actions"><button class="secondary-button" id="cancel-product" type="button">Cancel</button><button class="primary-button" type="submit">Save product</button></div></form></dialog>
+  <div class="toast" role="status" aria-live="polite"></div>
+  <script src="user-store.js"></script><script src="api-client.js"></script><script src="admin-auth.js"></script><script src="products.js"></script><script src="admin.js"></script>
+</body>
+</html>

@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Notes from Morrow Objects on materials, makers, and slower living." />
+  <title>Journal | Morrow Objects</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600&family=Playfair+Display:wght@500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <a href="#main-content" class="skip-link">Skip to main content</a>
+  <main id="main-content">
+    <section class="shop-hero" aria-labelledby="journal-title">
+      <div class="shop-hero-content"><p class="eyebrow">Notes from Morrow</p><h1 id="journal-title">A quiet note, now and then.</h1><p class="shop-hero-intro">Thoughts on making, living with less, and finding beauty in the everyday.</p></div>
+    </section>
+    <section class="products-section" aria-labelledby="journal-entries-title">
+      <div class="section-heading"><div><p class="eyebrow">The journal</p><h2 id="journal-entries-title">Things worth taking slowly.</h2></div><p class="section-aside">A small collection of notes from the people, materials, and rituals behind Morrow.</p></div>
+      <div class="category-grid">
+        <article class="category-card category-large"><img src="https://images.unsplash.com/photo-1610701596007-11502861dcfa?auto=format&fit=crop&w=1100&q=85" alt="Handmade ceramic objects on a table" /><span class="category-label">The case for everyday objects</span></article>
+        <article class="category-card"><img src="https://images.unsplash.com/photo-1528459105426-b9548367069b?auto=format&fit=crop&w=900&q=85" alt="Folded natural linen textile" /><span class="category-label">On living with linen</span></article>
+        <article class="category-card"><img src="https://images.unsplash.com/photo-1494438639946-1ebd1d20bf85?auto=format&fit=crop&w=900&q=85" alt="Warm light in a quiet room" /><span class="category-label">A softer kind of light</span></article>
+      </div>
+    </section>
+    <section class="newsletter" aria-labelledby="journal-signup-title"><div><p class="eyebrow">Stay close</p><h2 id="journal-signup-title">Receive the next note.</h2></div><form class="signup-form"><label class="sr-only" for="email">Your email address</label><input id="email" type="email" placeholder="Your email address" required /><button type="submit">Sign me up <span>↗</span></button><p class="form-message" role="status"></p></form></section>
+  </main>
+  <div class="toast" role="status" aria-live="polite"></div>
+  <script src="user-store.js"></script><script src="navigation.js"></script>
+  <script src="journal.js"></script>
+  <script src="auth-gate.js"></script>
+</body>
+</html>

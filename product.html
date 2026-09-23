@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Morrow Objects - considered objects for slower, better living." />
+  <title>Product | Morrow Objects</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600&family=Playfair+Display:wght@500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <a href="#main-content" class="skip-link">Skip to main content</a>
+  <!-- Navigation injected by navigation.js -->
+
+  <main id="main-content">
+    <nav class="breadcrumb" aria-label="Breadcrumb">
+      <a href="index.html">Home</a>
+      <span>/</span>
+      <a href="shop.html">Shop</a>
+      <span>/</span>
+      <span class="breadcrumb-current" aria-current="page"></span>
+    </nav>
+
+    <section class="product-detail" id="product-detail">
+      <div class="product-detail-image">
+        <img id="product-image" src="" alt="" />
+      </div>
+      <div class="product-detail-info">
+        <p class="eyebrow">Morrow object</p>
+        <h1 id="product-title"></h1>
+        <p class="product-category" id="product-category"></p>
+        <p class="product-description" id="product-description"></p>
+        <div class="product-price-wrap">
+          <strong class="product-price" id="product-price"></strong>
+        </div>
+        <div class="product-actions">
+          <div class="quantity-selector">
+            <button type="button" class="qty-btn" id="qty-decrease" aria-label="Decrease quantity">−</button>
+            <span class="qty-value" id="qty-value">1</span>
+            <button type="button" class="qty-btn" id="qty-increase" aria-label="Increase quantity">+</button>
+          </div>
+          <button class="add-to-bag" id="add-to-bag" type="button">Add to bag <span>↗</span></button>
+        </div>
+      </div>
+    </section>
+
+    <section class="related-products">
+      <h2>You may also like</h2>
+      <div class="product-grid" id="related-grid">
+        <!-- Related products rendered by product.js -->
+      </div>
+    </section>
+  </main>
+
+  <!-- Footer injected by navigation.js -->
+
+  <!-- Cart Drawer -->
+  <aside class="cart-drawer" aria-label="Shopping bag" aria-hidden="true">
+    <div class="drawer-header">
+      <h2>Your bag</h2>
+      <button class="drawer-close" type="button" aria-label="Close shopping bag">×</button>
+    </div>
+    <div class="cart-items"></div>
+    <div class="cart-empty">Your bag is waiting for something good.</div>
+    <div class="cart-footer">
+      <div><span>Subtotal</span><strong class="cart-total">$0</strong></div>
+      <button class="checkout-button" type="button">Continue to checkout <span>↗</span></button>
+    </div>
+  </aside>
+  <div class="drawer-backdrop"></div>
+
+  <!-- Search Dialog -->
+  <dialog class="search-dialog">
+    <button class="dialog-close search-close" type="button" aria-label="Close search">×</button>
+    <div class="search-panel">
+      <div class="search-header">
+        <h2>Search the collection</h2>
+        <div class="search-input-wrap">
+          <span class="search-icon">⌕</span>
+          <input class="search-input" type="search" placeholder="Search by name, category, or material..." autocomplete="off" />
+          <button class="search-clear" type="button" aria-label="Clear search">×</button>
+        </div>
+      </div>
+      <div class="search-results">
+        <div class="search-empty">Start typing to find your next object.</div>
+        <div class="search-no-results" hidden>No items match your search.</div>
+        <div class="search-grid"></div>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- Account Dialog -->
+  <dialog class="account-dialog" aria-labelledby="account-title">
+    <div class="account-panel">
+      <p class="eyebrow">Your Morrow</p>
+      <h2 id="account-title">Welcome back.</h2>
+      <p class="account-intro">Keep your saved pieces and orders close.</p>
+      <div class="account-tabs" role="tablist" aria-label="Account access">
+        <button class="account-tab active" type="button" role="tab" aria-selected="true" data-account-mode="login">Log in</button>
+        <button class="account-tab" type="button" role="tab" aria-selected="false" data-account-mode="signup">Sign up</button>
+      </div>
+      <form class="account-form">
+        <div class="account-name-field" hidden><label for="account-name">Full name</label><input id="account-name" type="text" autocomplete="name" /></div>
+        <label for="account-email">Email address</label><input id="account-email" type="email" autocomplete="email" required />
+        <label for="account-password">Password</label>
+        <div class="password-input-wrap">
+          <input id="account-password" type="password" autocomplete="current-password" minlength="6" required />
+          <button class="password-toggle" type="button" aria-label="Show password">Show</button>
+        </div>
+        <button class="account-submit" type="submit">Log in <span>↗</span></button>
+        <p class="account-message" role="status"></p><button class="account-recovery-link" type="button">Forgot password?</button>
+      </form>
+      <form class="account-recovery-form" hidden>
+        <p class="account-recovery-intro">Enter your registered email and choose a new password.</p>
+        <label for="recovery-email">Email address</label><input id="recovery-email" type="email" autocomplete="email" required />
+        <label for="recovery-password">New password</label><input id="recovery-password" type="password" minlength="6" autocomplete="new-password" required />
+        <button class="account-submit" type="submit">Reset password <span>↗</span></button>
+        <p class="account-message" role="status"></p>
+        <button class="account-back" type="button">Back to log in</button>
+      </form>
+      <div class="account-welcome" hidden>
+        <p class="eyebrow">Signed in</p>
+        <h3 class="account-member-name"></h3>
+        <p>Your account is ready for the next good thing.</p>
+        <div class="account-order-tabs"><button class="account-order-tab active" type="button" data-tab="orders">Order history</button></div>
+        <div class="account-orders">
+          <div class="orders-empty">No orders yet. Your first purchase will appear here.</div>
+          <div class="orders-list" hidden></div>
+        </div>
+        <button class="account-signout" type="button">Sign out</button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- Checkout Dialog -->
+  <dialog class="checkout-dialog">
+    <button class="dialog-close checkout-close" type="button" aria-label="Close checkout">×</button>
+    <div class="checkout-panel">
+      <div class="checkout-steps" role="tablist" aria-label="Checkout steps">
+        <button class="checkout-step active" type="button" role="tab" aria-selected="true" data-step="1" disabled><span class="step-number">1</span><span class="step-label">Contact</span></button>
+        <button class="checkout-step" type="button" role="tab" aria-selected="false" data-step="2" disabled><span class="step-number">2</span><span class="step-label">Payment</span></button>
+        <button class="checkout-step" type="button" role="tab" aria-selected="false" data-step="3" disabled><span class="step-number">3</span><span class="step-label">Confirmation</span></button>
+      </div>
+      <div class="checkout-content">
+        <form class="checkout-form" data-checkout-step="1">
+          <h2>Contact & Shipping</h2>
+          <p class="checkout-intro">Where should we send your order?</p>
+          <div class="checkout-field"><label for="checkout-email">Email address</label><input id="checkout-email" type="email" autocomplete="email" required /></div>
+          <div class="checkout-field"><label for="checkout-name">Full name</label><input id="checkout-name" type="text" autocomplete="name" required /></div>
+          <div class="checkout-field"><label for="checkout-address">Street address</label><input id="checkout-address" type="text" autocomplete="address-line1" required /></div>
+          <div class="checkout-row">
+            <div class="checkout-field"><label for="checkout-city">City</label><input id="checkout-city" type="text" autocomplete="address-level2" required /></div>
+            <div class="checkout-field"><label for="checkout-postal">Postal code</label><input id="checkout-postal" type="text" autocomplete="postal-code" required /></div>
+          </div>
+          <div class="checkout-field"><label for="checkout-country">Country</label><input id="checkout-country" type="text" autocomplete="country-name" required /></div>
+          <div class="checkout-actions"><button type="submit" class="checkout-next" data-checkout-next-step="1">Continue to payment <span>→</span></button></div>
+        </form>
+        <form class="checkout-form" data-checkout-step="2" hidden>
+          <h2>Payment method</h2>
+          <p class="checkout-intro">This is a demo — no real charges will be made.</p>
+          <div class="checkout-field"><label for="checkout-card-name">Name on card</label><input id="checkout-card-name" type="text" autocomplete="cc-name" required /></div>
+          <div class="checkout-field"><label for="checkout-card-number">Card number</label><input id="checkout-card-number" type="text" autocomplete="cc-number" inputmode="numeric" placeholder="1234 5678 9012 3456" required /></div>
+          <div class="checkout-row">
+            <div class="checkout-field"><label for="checkout-card-expiry">Expiry date</label><input id="checkout-card-expiry" type="text" autocomplete="cc-exp" placeholder="MM / YY" required /></div>
+            <div class="checkout-field"><label for="checkout-card-cvc">CVC</label><input id="checkout-card-cvc" type="text" autocomplete="cc-csc" inputmode="numeric" placeholder="123" required /></div>
+          </div>
+          <div class="checkout-actions"><button type="button" class="checkout-back">← Back</button><button type="submit" class="checkout-next" data-checkout-next-step="2">Review order <span>→</span></button></div>
+        </form>
+        <div class="checkout-confirmation" data-checkout-step="3" hidden>
+          <div class="confirmation-header"><span class="confirmation-icon">✓</span><h2>Order placed</h2><p class="checkout-intro">Thank you for your purchase. Your order confirmation has been sent to your email.</p></div>
+          <div class="confirmation-details">
+            <div class="confirmation-row"><span>Order number</span><strong class="order-number"></strong></div>
+            <div class="confirmation-row"><span>Items</span><strong class="order-item-count"></strong></div>
+            <div class="confirmation-row"><span>Total</span><strong class="order-total"></strong></div>
+          </div>
+          <div class="confirmation-items"></div>
+          <div class="checkout-actions"><button type="button" class="checkout-done">Continue shopping</button></div>
+        </div>
+      </div>
+    </div>
+  </dialog>
+
+  <div class="toast" role="status" aria-live="polite"></div>
+  <script src="user-store.js"></script><script src="api-client.js"></script><script src="navigation.js"></script>
+  <script src="router.js"></script>
+  <script src="products.js"></script>
+  <script src="app.js"></script>
+  <script src="product.js"></script>
+  <script src="auth-gate.js"></script>
+</body>
+</html>
