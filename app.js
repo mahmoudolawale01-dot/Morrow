@@ -451,6 +451,38 @@ function updateSubtotal() {
   if (cartTotal) cartTotal.textContent = `$${total}`;
 }
 
+function openAccountPrompt() {
+  if (!accountDialog) return;
+  document.body.classList.add('auth-required');
+  accountForm.hidden = false;
+  accountWelcome.hidden = true;
+  setRecoveryMode(false);
+  setAccountMode('login');
+  if (!accountDialog.open) accountDialog.showModal();
+  document.querySelector('#account-email')?.focus();
+}
+
+async function requirePurchaseAccount() {
+  if (window.MorrowApi) {
+    try {
+      const response = await window.MorrowApi.apiRequest('/api/auth/me');
+      if (response.user) return true;
+    } catch {
+      // The backend session is the source of truth for purchases.
+    }
+    openAccountPrompt();
+    showToast('Please log in or sign up before buying');
+    return false;
+  }
+
+  if (window.MorrowUsers?.getSessionAccount()) return true;
+  openAccountPrompt();
+  showToast('Please log in or sign up before buying');
+  return false;
+}
+
+window.MorrowPurchaseAuth = { require: requirePurchaseAccount };
+
 function showToast(message) {
   if (!toast) return;
   toast.textContent = message;
@@ -476,7 +508,8 @@ function resolveQuickAddProduct(productName) {
 
 // Quick add buttons - works on all pages
 document.querySelectorAll('.quick-add').forEach((button) => {
-  button.addEventListener('click', () => {
+  button.addEventListener('click', async () => {
+    if (!(await requirePurchaseAccount())) return;
     const productName = button.dataset.product;
     const card = button.closest('.product-card');
     const product = resolveQuickAddProduct(productName);
@@ -850,8 +883,11 @@ async function completeOrder() {
 }
 
 document.querySelector('.checkout-button').addEventListener('click', () => {
+  if (!window.MorrowPurchaseAuth) return;
   closeCart();
-  openCheckout();
+  window.MorrowPurchaseAuth.require().then((authenticated) => {
+    if (authenticated) openCheckout();
+  });
 });
 
 checkoutClose.addEventListener('click', () => {
@@ -897,7 +933,8 @@ productDialog.querySelector('.dialog-close').addEventListener('click', () => pro
 document.querySelectorAll('[data-details]').forEach((button) => {
   button.addEventListener('click', () => openProductDialog(button.closest('.product-card')));
 });
-document.querySelector('.dialog-add').addEventListener('click', (event) => {
+document.querySelector('.dialog-add').addEventListener('click', async (event) => {
+  if (!(await requirePurchaseAccount())) return;
   const productName = event.currentTarget.dataset.product;
   const product = resolveQuickAddProduct(productName);
   if (window.MorrowRouter && product) {
@@ -1177,11 +1214,18 @@ accountTabs.forEach((tab) => tab.addEventListener('click', () => setAccountMode(
 const accountClose = document.querySelector('.account-close');
 if (accountClose) {
   accountClose.addEventListener('click', () => {
-    if (!document.body.classList.contains('auth-required')) accountDialog.close();
+    if (document.body.classList.contains('auth-required')) {
+      window.location.replace('index.html');
+      return;
+    }
+    accountDialog.close();
   });
 }
 accountDialog.addEventListener('cancel', (event) => {
-  if (document.body.classList.contains('auth-required')) event.preventDefault();
+  if (document.body.classList.contains('auth-required')) {
+    event.preventDefault();
+    window.location.replace('index.html');
+  }
 });
 document.querySelector('.account-signout').addEventListener('click', () => {
   window.MorrowApi.apiRequest('/api/auth/logout', { method: 'POST' }).catch(() => {});

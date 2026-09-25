@@ -23,9 +23,11 @@ const seedProducts = [
 ];
 
 function sendJson(response, statusCode, payload, headers = {}) {
+  const requestOrigin = response.req?.headers.origin;
+  const allowedOrigins = new Set(['http://127.0.0.1:3000', 'http://localhost:3000']);
   response.writeHead(statusCode, {
     'Content-Type': 'application/json; charset=utf-8',
-    'Access-Control-Allow-Origin': 'http://127.0.0.1:3000',
+    'Access-Control-Allow-Origin': allowedOrigins.has(requestOrigin) ? requestOrigin : 'http://127.0.0.1:3000',
     'Access-Control-Allow-Credentials': 'true',
     ...headers,
   });

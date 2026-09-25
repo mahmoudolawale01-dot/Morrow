@@ -154,7 +154,8 @@
     }
 
     if (addToBagBtn) {
-      addToBagBtn.addEventListener('click', () => {
+      addToBagBtn.addEventListener('click', async () => {
+        if (window.MorrowPurchaseAuth && !(await window.MorrowPurchaseAuth.require())) return;
         if (window.MorrowRouter) {
           window.MorrowRouter.addToCart({
             name: product.name,
