@@ -1,4 +1,4 @@
-const MORROW_API_URL = `${window.location.protocol}//${window.location.hostname}:3001`;
+const MORROW_API_URL = window.MORROW_API_URL || window.MORROW_API_BASE_URL || `${window.location.protocol}//${window.location.hostname}:3001`;
 
 async function apiRequest(path, options = {}) {
   const response = await fetch(`${MORROW_API_URL}${path}`, {

@@ -1,3 +1,5 @@
+require('dotenv').config();
+
 const http = require('http');
 
 function get(url) {

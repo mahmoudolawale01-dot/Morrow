@@ -1,0 +1,13 @@
+html, body {
+  margin: 0;
+  padding: 0;
+  background: #f6f3ee;
+  color: #1f1f1f;
+}
+
+* { box-sizing: border-box; }
+
+main {
+  max-width: 960px;
+  margin: 0 auto;
+}

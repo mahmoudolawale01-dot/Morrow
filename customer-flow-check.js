@@ -1,3 +1,5 @@
+require('dotenv').config();
+
 const http = require('http');
 const apiPort = Number(process.env.API_PORT) || 3001;
 

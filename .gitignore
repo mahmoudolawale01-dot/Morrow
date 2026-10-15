@@ -1,4 +1,6 @@
 node_modules/
+.next/
+*.tsbuildinfo
 database/morrow.sqlite
 *.sqlite-shm
 *.sqlite-wal

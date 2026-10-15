@@ -1,10 +1,21 @@
 const PRODUCTS_KEY = 'morrow-admin-products';
 const SUBMISSIONS_KEY = 'morrow-seller-submissions';
+const ADMIN_ACCOUNT_KEY = 'morrow-admin-account';
+const ADMIN_SESSION_KEY = 'morrow-admin-session';
 const defaultProducts = window.MorrowProducts.getAll().map((product) => ({ ...product, published: true }));
 const productDialog = document.querySelector('#product-dialog');
 const productForm = document.querySelector('#product-form');
 const productsBody = document.querySelector('#admin-products');
 const toast = document.querySelector('.toast');
+
+function isAdminAuthenticated() {
+  try {
+    const account = JSON.parse(localStorage.getItem(ADMIN_ACCOUNT_KEY));
+    return sessionStorage.getItem(ADMIN_SESSION_KEY) === 'authenticated' && Boolean(account);
+  } catch {
+    return false;
+  }
+}
 
 function readJson(key, fallback) {
   try {
@@ -92,6 +103,12 @@ function formatOrderDate(date) {
 }
 
 async function renderOrders() {
+  if (!isAdminAuthenticated()) {
+    document.querySelector('#order-count').textContent = '0 orders';
+    document.querySelector('#admin-orders').innerHTML = '<p class="empty-state">Sign in to view purchase history.</p>';
+    return;
+  }
+
   let orders = [];
   try {
     const response = await window.MorrowApi.apiRequest('/api/admin/orders');
@@ -111,6 +128,12 @@ async function renderOrders() {
 }
 
 function renderUsers() {
+  if (!isAdminAuthenticated()) {
+    document.querySelector('#user-count').textContent = '0 users';
+    document.querySelector('#admin-users').innerHTML = '<p class="empty-state">Sign in to view account directory.</p>';
+    return;
+  }
+
   const users = window.MorrowUsers.getAccounts();
   document.querySelector('#user-count').textContent = `${users.length} user${users.length === 1 ? '' : 's'}`;
   document.querySelector('#admin-users').innerHTML = users.length ? users.map((user) => `<article class="admin-user"><div><strong>${user.name || user.email}</strong><span>${user.email}</span><small>Joined ${formatOrderDate(user.createdAt)}</small></div><div class="admin-user-actions"><span class="status-pill ${user.status === 'active' ? 'is-live' : ''}">${user.status}</span><button type="button" data-user-action="${user.status === 'active' ? 'suspend' : 'activate'}" data-user-email="${user.email}">${user.status === 'active' ? 'Suspend' : 'Reactivate'}</button><button type="button" data-user-action="delete" data-user-email="${user.email}">Delete</button></div></article>`).join('') : '<p class="empty-state">No user accounts yet.</p>';
@@ -127,6 +150,12 @@ function renderUsers() {
 }
 
 function renderActivity() {
+  if (!isAdminAuthenticated()) {
+    document.querySelector('#activity-count').textContent = '0 events';
+    document.querySelector('#admin-activity').innerHTML = '<p class="empty-state">Sign in to view access logs.</p>';
+    return;
+  }
+
   const activity = window.MorrowUsers.getActivity();
   document.querySelector('#activity-count').textContent = `${activity.length} event${activity.length === 1 ? '' : 's'}`;
   document.querySelector('#admin-activity').innerHTML = activity.length ? activity.map((event) => `<article class="admin-activity-item"><strong>${event.email}</strong><span>${event.type}</span><time>${formatOrderDate(event.date)}</time></article>`).join('') : '<p class="empty-state">No login activity yet.</p>';
@@ -175,8 +204,13 @@ document.querySelectorAll('.workspace-tab').forEach((tab) => tab.addEventListene
   if (tab.dataset.view === 'activity') renderActivity();
 }));
 
-renderProducts();
-renderSubmissions();
-renderOrders();
-renderUsers();
-renderActivity();
+function refreshAdminDashboard() {
+  renderProducts();
+  renderSubmissions();
+  renderOrders();
+  renderUsers();
+  renderActivity();
+}
+
+document.addEventListener('morrow-admin-auth-change', refreshAdminDashboard);
+refreshAdminDashboard();

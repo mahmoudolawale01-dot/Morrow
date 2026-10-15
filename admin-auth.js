@@ -29,6 +29,7 @@ async function hashPassword(password) {
 function setAuthenticated(authenticated) {
   authPanel.hidden = authenticated;
   protectedElements.forEach((element) => { element.hidden = !authenticated; });
+  document.dispatchEvent(new CustomEvent('morrow-admin-auth-change', { detail: { authenticated } }));
 }
 
 function showMessage(message) {
