@@ -1,0 +1,83 @@
+.account-signup-choice {
+  margin: 0 0 24px;
+}
+
+.account-signup-choice .eyebrow {
+  margin-bottom: 12px;
+}
+
+.account-signup-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.account-signup-options button {
+  display: grid;
+  gap: 7px;
+  min-height: 104px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+}
+
+.account-signup-options button:hover,
+.account-signup-options button:focus-visible {
+  border-color: var(--coral);
+  outline: none;
+}
+
+.account-signup-options strong {
+  font-family: var(--serif);
+  font-size: 20px;
+}
+
+.account-signup-options span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.seller-auth-toggle {
+  display: flex;
+  gap: 24px;
+  margin-bottom: 24px;
+  border-bottom: 1px solid var(--line);
+}
+
+.seller-auth-tab {
+  padding: 0 0 11px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.seller-auth-tab.active {
+  border-color: var(--coral);
+  color: var(--ink);
+}
+
+.seller-auth-form label {
+  display: block;
+  margin: 16px 0 7px;
+  font-family: var(--mono);
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.seller-auth-form input {
+  width: 100%;
+  padding: 13px 14px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, .3);
+  color: var(--ink);
+}
+
+@media (max-width: 520px) {
+  .account-signup-options {
+    grid-template-columns: 1fr;
+  }
+}

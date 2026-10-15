@@ -7,6 +7,8 @@ CREATE TABLE IF NOT EXISTS users (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   email TEXT NOT NULL UNIQUE,
   name TEXT NOT NULL,
+  phone TEXT NOT NULL DEFAULT '',
+  address TEXT NOT NULL DEFAULT '',
   password_hash TEXT NOT NULL,
   role TEXT NOT NULL DEFAULT 'customer' CHECK (role IN ('customer', 'admin', 'seller')),
   status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'suspended', 'deleted')),

@@ -1,7 +1,139 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="description" content="Submit a product to Morrow Objects." /><title>Sell with Morrow | Morrow Objects</title><link rel="preconnect" href="https://fonts.googleapis.com" /><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin /><link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600&family=Playfair+Display:wght@500;600;700&display=swap" rel="stylesheet" /><link rel="stylesheet" href="styles.css" />
-<script src="user-store.js"></script>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Seller dashboard for Morrow Objects." />
+  <title>Seller dashboard | Morrow Objects</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600&family=Playfair+Display:wght@500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="role-auth.css" />
 </head>
-<body class="workspace-body"><header class="workspace-header"><a class="wordmark" href="index.html">morrow<span>.</span></a><div><span class="workspace-label">Maker workspace</span><a class="workspace-store-link" href="shop.html">View store ↗</a></div></header><main class="workspace seller-workspace" id="main-content"><section class="workspace-intro"><div><p class="eyebrow">Sell with Morrow</p><h1>Make something worth keeping.</h1><p>Share the object, the material, and the story behind your work. Submissions are reviewed before they join the collection.</p></div></section><section class="workspace-panel"><div class="panel-heading"><div><p class="eyebrow">New submission</p><h2>Tell us about your piece.</h2></div></div><form class="seller-form" id="seller-form"><div class="form-grid"><div><label for="seller-name">Your name</label><input id="seller-name" required /></div><div><label for="seller-email">Email</label><input id="seller-email" type="email" required /></div><div><label for="seller-product">Product name</label><input id="seller-product" required /></div><div><label for="seller-category">Category</label><select id="seller-category"><option value="ceramics">Ceramics</option><option value="textiles">Textiles</option><option value="lighting">Lighting</option></select></div><div><label for="seller-price">Suggested price</label><input id="seller-price" type="number" min="0" step="1" required /></div><div><label for="seller-image">Product image URL</label><input id="seller-image" type="url" required /></div></div><label for="seller-description">Description</label><textarea id="seller-description" rows="5" required></textarea><label for="seller-material">Materials and process</label><textarea id="seller-material" rows="4" required></textarea><button class="primary-button" type="submit">Send for review <span>↗</span></button><p class="form-message" id="seller-message" role="status"></p></form></section></main><script src="user-store.js"></script><script src="api-client.js"></script><script src="seller.js"></script><script src="auth-gate.js"></script></body></html>
+<body class="workspace-body">
+  <header class="workspace-header">
+    <a class="wordmark" href="index.html">morrow<span>.</span></a>
+    <div>
+      <span class="workspace-label">Maker workspace</span>
+      <a class="workspace-store-link" href="shop.html">View store ↗</a>
+    </div>
+  </header>
+
+  <main class="workspace seller-workspace" id="main-content">
+    <section class="workspace-intro">
+      <div>
+        <p class="eyebrow">Sell with Morrow</p>
+        <h1>Bring your pieces to the collection.</h1>
+        <p>Log in as a seller to submit your work for review. Approved pieces can join the curated Morrow catalog.</p>
+      </div>
+    </section>
+
+    <section class="workspace-panel" id="seller-auth-panel">
+      <div class="panel-heading">
+        <div>
+          <p class="eyebrow">Seller access</p>
+          <h2>Access your maker workspace.</h2>
+        </div>
+      </div>
+
+      <div class="seller-auth-toggle" role="tablist" aria-label="Seller access mode">
+        <button class="seller-auth-tab active" type="button" data-seller-mode="login" aria-selected="true">Log in</button>
+        <button class="seller-auth-tab" type="button" data-seller-mode="signup" aria-selected="false">Create seller account</button>
+      </div>
+
+      <form class="seller-auth-form" id="seller-auth-form">
+        <div class="form-grid">
+          <div class="seller-name-field" hidden>
+            <label for="seller-auth-name">Full name</label>
+            <input id="seller-auth-name" type="text" autocomplete="name" />
+          </div>
+          <div>
+            <label for="seller-auth-email">Email</label>
+            <input id="seller-auth-email" type="email" autocomplete="email" required />
+          </div>
+          <div class="seller-phone-field" hidden>
+            <label for="seller-auth-phone">Phone number</label>
+            <input id="seller-auth-phone" type="tel" autocomplete="tel" />
+          </div>
+          <div class="seller-address-field" hidden>
+            <label for="seller-auth-address">Address</label>
+            <input id="seller-auth-address" type="text" autocomplete="street-address" />
+          </div>
+          <div>
+            <label for="seller-auth-password">Password</label>
+            <input id="seller-auth-password" type="password" autocomplete="current-password" minlength="8" required />
+          </div>
+        </div>
+        <button class="primary-button" type="submit">Log in <span>↗</span></button>
+        <p class="form-message" id="seller-auth-message" role="status"></p>
+      </form>
+    </section>
+
+    <section class="workspace-panel" id="seller-dashboard" hidden>
+      <div class="panel-heading">
+        <div>
+          <p class="eyebrow">Your studio</p>
+          <h2 id="seller-welcome">Welcome back.</h2>
+        </div>
+        <button class="workspace-action" id="seller-signout" type="button">Sign out</button>
+      </div>
+
+      <form class="seller-form" id="seller-form">
+        <div class="form-grid">
+          <div>
+            <label for="seller-name">Your name</label>
+            <input id="seller-name" required />
+          </div>
+          <div>
+            <label for="seller-email">Email</label>
+            <input id="seller-email" type="email" required />
+          </div>
+          <div>
+            <label for="seller-product">Product name</label>
+            <input id="seller-product" required />
+          </div>
+          <div>
+            <label for="seller-category">Category</label>
+            <select id="seller-category">
+              <option value="ceramics">Ceramics</option>
+              <option value="textiles">Textiles</option>
+              <option value="lighting">Lighting</option>
+            </select>
+          </div>
+          <div>
+            <label for="seller-price">Suggested price</label>
+            <input id="seller-price" type="number" min="0" step="1" required />
+          </div>
+          <div>
+            <label for="seller-image">Product image URL</label>
+            <input id="seller-image" type="url" required />
+          </div>
+        </div>
+
+        <label for="seller-description">Description</label>
+        <textarea id="seller-description" rows="5" required></textarea>
+
+        <label for="seller-material">Materials and process</label>
+        <textarea id="seller-material" rows="4" required></textarea>
+
+        <button class="primary-button" type="submit">Send for review <span>↗</span></button>
+        <p class="form-message" id="seller-message" role="status"></p>
+      </form>
+
+      <div class="seller-submissions-panel">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">Submission status</p>
+            <h2>Your current reviews</h2>
+          </div>
+        </div>
+        <div id="seller-submissions" class="submission-list"></div>
+      </div>
+    </section>
+  </main>
+
+  <script src="api-client.js"></script>
+  <script src="seller.js"></script>
+</body>
+</html>

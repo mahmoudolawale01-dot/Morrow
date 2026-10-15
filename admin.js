@@ -1,17 +1,34 @@
 const PRODUCTS_KEY = 'morrow-admin-products';
 const SUBMISSIONS_KEY = 'morrow-seller-submissions';
-const ADMIN_ACCOUNT_KEY = 'morrow-admin-account';
-const ADMIN_SESSION_KEY = 'morrow-admin-session';
+const ADMIN_LOCAL_ACCOUNT_KEY = 'morrow-admin-account';
+const ADMIN_LOCAL_SESSION_KEY = 'morrow-admin-session';
 const defaultProducts = window.MorrowProducts.getAll().map((product) => ({ ...product, published: true }));
 const productDialog = document.querySelector('#product-dialog');
 const productForm = document.querySelector('#product-form');
 const productsBody = document.querySelector('#admin-products');
 const toast = document.querySelector('.toast');
+const exportDialog = document.querySelector('#export-dialog');
+const exportForm = document.querySelector('#export-form');
+const exportType = document.querySelector('#export-type');
+const exportSort = document.querySelector('#export-sort');
+const exportVendor = document.querySelector('#export-vendor');
+const exportCategory = document.querySelector('#export-category');
+const exportMessage = document.querySelector('#export-message');
+const exportButton = document.querySelector('#download-export');
 
-function isAdminAuthenticated() {
+async function isAdminAuthenticated() {
+  if (window.MorrowApi) {
+    try {
+      const response = await window.MorrowApi.apiRequest('/api/auth/me');
+      return response.user?.role === 'admin';
+    } catch {
+      // The browser-local session is still accepted as a fallback when the API session is not active.
+    }
+  }
+
   try {
-    const account = JSON.parse(localStorage.getItem(ADMIN_ACCOUNT_KEY));
-    return sessionStorage.getItem(ADMIN_SESSION_KEY) === 'authenticated' && Boolean(account);
+    const account = JSON.parse(localStorage.getItem(ADMIN_LOCAL_ACCOUNT_KEY));
+    return sessionStorage.getItem(ADMIN_LOCAL_SESSION_KEY) === 'authenticated' && Boolean(account);
   } catch {
     return false;
   }
@@ -92,10 +109,22 @@ function bindProductActions() {
   }));
 }
 
-function renderSubmissions() {
-  const submissions = readJson(SUBMISSIONS_KEY, []);
-  document.querySelector('#submission-count').textContent = `${submissions.length} pending submission${submissions.length === 1 ? '' : 's'}`;
-  document.querySelector('#admin-submissions').innerHTML = submissions.length ? submissions.map((submission) => `<article class="submission-item"><div><strong>${submission.name}</strong><span>${submission.seller} · ${submission.category} · $${submission.price}</span></div><span class="status-pill">${submission.status}</span></article>`).join('') : '<p class="empty-state">No seller submissions yet.</p>';
+async function renderSubmissions() {
+  if (!(await isAdminAuthenticated())) {
+    document.querySelector('#submission-count').textContent = '0 pending submissions';
+    document.querySelector('#admin-submissions').innerHTML = '<p class="empty-state">Sign in to view seller submissions.</p>';
+    return;
+  }
+
+  try {
+    const response = await window.MorrowApi.apiRequest('/api/admin/submissions');
+    const submissions = Array.isArray(response.submissions) ? response.submissions : [];
+    document.querySelector('#submission-count').textContent = `${submissions.length} pending submission${submissions.length === 1 ? '' : 's'}`;
+    document.querySelector('#admin-submissions').innerHTML = submissions.length ? submissions.map((submission) => `<article class="submission-item"><div><strong>${submission.name}</strong><span>${submission.seller} · ${submission.category} · $${submission.price}</span></div><span class="status-pill">${submission.status}</span></article>`).join('') : '<p class="empty-state">No seller submissions yet.</p>';
+  } catch (error) {
+    document.querySelector('#submission-count').textContent = 'Submissions unavailable';
+    document.querySelector('#admin-submissions').innerHTML = `<p class="empty-state">${error.message}</p>`;
+  }
 }
 
 function formatOrderDate(date) {
@@ -103,7 +132,7 @@ function formatOrderDate(date) {
 }
 
 async function renderOrders() {
-  if (!isAdminAuthenticated()) {
+  if (!(await isAdminAuthenticated())) {
     document.querySelector('#order-count').textContent = '0 orders';
     document.querySelector('#admin-orders').innerHTML = '<p class="empty-state">Sign in to view purchase history.</p>';
     return;
@@ -127,30 +156,178 @@ async function renderOrders() {
   }).join('') : '<p class="empty-state">No purchases yet.</p>';
 }
 
-function renderUsers() {
-  if (!isAdminAuthenticated()) {
+async function renderUsers() {
+  if (!(await isAdminAuthenticated())) {
     document.querySelector('#user-count').textContent = '0 users';
     document.querySelector('#admin-users').innerHTML = '<p class="empty-state">Sign in to view account directory.</p>';
     return;
   }
 
-  const users = window.MorrowUsers.getAccounts();
+  let users = [];
+  try {
+    const response = await window.MorrowApi.apiRequest('/api/admin/users');
+    users = Array.isArray(response.users) ? response.users : [];
+  } catch (error) {
+    document.querySelector('#user-count').textContent = 'Users unavailable';
+    document.querySelector('#admin-users').innerHTML = `<p class="empty-state">${error.message}</p>`;
+    return;
+  }
+
   document.querySelector('#user-count').textContent = `${users.length} user${users.length === 1 ? '' : 's'}`;
-  document.querySelector('#admin-users').innerHTML = users.length ? users.map((user) => `<article class="admin-user"><div><strong>${user.name || user.email}</strong><span>${user.email}</span><small>Joined ${formatOrderDate(user.createdAt)}</small></div><div class="admin-user-actions"><span class="status-pill ${user.status === 'active' ? 'is-live' : ''}">${user.status}</span><button type="button" data-user-action="${user.status === 'active' ? 'suspend' : 'activate'}" data-user-email="${user.email}">${user.status === 'active' ? 'Suspend' : 'Reactivate'}</button><button type="button" data-user-action="delete" data-user-email="${user.email}">Delete</button></div></article>`).join('') : '<p class="empty-state">No user accounts yet.</p>';
-  document.querySelectorAll('[data-user-action]').forEach((button) => button.addEventListener('click', () => {
-    const email = button.dataset.userEmail;
-    const action = button.dataset.userAction;
-    if (action === 'delete' && !window.confirm(`Delete the account for ${email}?`)) return;
-    if (action === 'delete') window.MorrowUsers.deleteAccount(email);
-    if (action === 'suspend') window.MorrowUsers.suspendAccount(email);
-    if (action === 'activate') window.MorrowUsers.activateAccount(email);
-    renderUsers();
-    showToast(`User ${action === 'delete' ? 'deleted' : action === 'suspend' ? 'suspended' : 'reactivated'}`);
-  }));
+  document.querySelector('#admin-users').innerHTML = users.length ? users.map((user) => `<article class="admin-user"><div><strong>${user.name || user.email}</strong><span>${user.email}</span><small>Joined ${formatOrderDate(user.createdAt)}</small></div><div class="admin-user-actions"><span class="status-pill ${user.status === 'active' ? 'is-live' : ''}">${user.status}</span><button type="button" data-user-action="${user.status === 'active' ? 'suspend' : 'activate'}" data-user-id="${user.id}">${user.status === 'active' ? 'Suspend' : 'Reactivate'}</button><button type="button" data-user-action="delete" data-user-id="${user.id}">Delete</button></div></article>`).join('') : '<p class="empty-state">No user accounts yet.</p>';
+
+  document.querySelectorAll('[data-user-action]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const userId = button.dataset.userId;
+      const action = button.dataset.userAction;
+      try {
+        if (action === 'delete') {
+          if (!window.confirm('Delete this account?')) return;
+          await window.MorrowApi.apiRequest(`/api/admin/users/${userId}`, { method: 'DELETE' });
+          showToast('User deleted');
+        } else {
+          const nextStatus = action === 'suspend' ? 'suspended' : 'active';
+          await window.MorrowApi.apiRequest(`/api/admin/users/${userId}`, {
+            method: 'PATCH',
+            body: JSON.stringify({ status: nextStatus }),
+          });
+          showToast(`User ${nextStatus === 'suspended' ? 'suspended' : 'reactivated'}`);
+        }
+        await renderUsers();
+      } catch (error) {
+        showToast(error.message);
+      }
+    });
+  });
 }
 
-function renderActivity() {
-  if (!isAdminAuthenticated()) {
+function updateExportControls() {
+  const type = exportType.value;
+  document.querySelector('#export-vendor-filter-wrap').hidden = type !== 'vendors';
+  document.querySelector('#export-category-filter-wrap').hidden = type !== 'products';
+
+  const sortOptions = {
+    users: [['date', 'Registration date'], ['name', 'Name']],
+    vendors: [['date', 'Registration date'], ['vendor', 'Vendor name']],
+    products: [['name', 'Product name'], ['category', 'Product type'], ['date', 'Date added']],
+  };
+  exportSort.innerHTML = sortOptions[type].map(([value, label]) => `<option value="${value}">${label}</option>`).join('');
+}
+
+async function loadExportVendors() {
+  if (exportVendor.options.length > 1) return;
+
+  try {
+    const response = await window.MorrowApi.apiRequest('/api/admin/export-data?type=vendors');
+    const vendors = Array.isArray(response.records) ? response.records : [];
+    exportVendor.innerHTML = '<option value="">All vendors</option>' + vendors.map((vendor) => `<option value="${vendor.id}">${vendor.name} (${vendor.email})</option>`).join('');
+  } catch (error) {
+    exportMessage.textContent = error.message || 'Unable to load vendor filters.';
+  }
+}
+
+function getExportColumns(type) {
+  const dateStyle = { numFmt: 'yyyy-mm-dd hh:mm' };
+  const columns = {
+    users: [
+      { header: 'Name', key: 'name', width: 26 },
+      { header: 'Email', key: 'email', width: 32 },
+      { header: 'Status', key: 'status', width: 16 },
+      { header: 'Registered', key: 'createdAt', width: 22, style: dateStyle },
+    ],
+    vendors: [
+      { header: 'Vendor', key: 'name', width: 26 },
+      { header: 'Email', key: 'email', width: 32 },
+      { header: 'Phone', key: 'phone', width: 20 },
+      { header: 'Address', key: 'address', width: 42 },
+      { header: 'Status', key: 'status', width: 16 },
+      { header: 'Joined', key: 'createdAt', width: 22, style: dateStyle },
+    ],
+    products: [
+      { header: 'Product', key: 'name', width: 28 },
+      { header: 'Product type', key: 'category', width: 18 },
+      { header: 'Price', key: 'price', width: 14, style: { numFmt: '$#,##0.00' } },
+      { header: 'Description', key: 'description', width: 54 },
+      { header: 'Material', key: 'material', width: 30 },
+      { header: 'Image URL', key: 'image', width: 52 },
+      { header: 'Published', key: 'published', width: 14 },
+      { header: 'Date added', key: 'createdAt', width: 22, style: dateStyle },
+    ],
+  };
+  return columns[type];
+}
+
+function toExcelDate(value) {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+async function downloadAdminExport() {
+  exportMessage.textContent = '';
+  exportButton.disabled = true;
+
+  try {
+    if (!window.ExcelJS) throw new Error('Excel export is unavailable. Reload the admin page and try again.');
+
+    const type = exportType.value;
+    const params = new URLSearchParams({ type, sort: exportSort.value });
+    const from = document.querySelector('#export-from').value;
+    const to = document.querySelector('#export-to').value;
+    if (from) params.set('from', from);
+    if (to) params.set('to', to);
+    if (type === 'vendors' && exportVendor.value) params.set('vendorId', exportVendor.value);
+    if (type === 'products' && exportCategory.value) params.set('category', exportCategory.value);
+
+    const response = await window.MorrowApi.apiRequest(`/api/admin/export-data?${params.toString()}`);
+    const records = Array.isArray(response.records) ? response.records : [];
+    const workbook = new window.ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet(type.charAt(0).toUpperCase() + type.slice(1));
+    worksheet.columns = getExportColumns(type);
+    worksheet.addRows(records.map((record) => ({ ...record, createdAt: toExcelDate(record.createdAt) })));
+    worksheet.views = [{ state: 'frozen', ySplit: 1 }];
+    worksheet.autoFilter = {
+      from: 'A1',
+      to: `${String.fromCharCode(64 + worksheet.columns.length)}${Math.max(1, records.length + 1)}`,
+    };
+    worksheet.getRow(1).font = { bold: true, color: { argb: 'FF20211D' } };
+    worksheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF4F0E8' } };
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const downloadUrl = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = downloadUrl;
+    link.download = `morrow-${type}-${new Date().toISOString().slice(0, 10)}.xlsx`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(downloadUrl), 1000);
+    exportMessage.textContent = `${records.length} record${records.length === 1 ? '' : 's'} exported.`;
+  } catch (error) {
+    exportMessage.textContent = error.message || 'Unable to create this export.';
+  } finally {
+    exportButton.disabled = false;
+  }
+}
+
+document.querySelector('#open-export-dialog').addEventListener('click', async () => {
+  exportMessage.textContent = '';
+  updateExportControls();
+  exportDialog.showModal();
+  if (exportType.value === 'vendors') await loadExportVendors();
+});
+exportType.addEventListener('change', async () => {
+  updateExportControls();
+  if (exportType.value === 'vendors') await loadExportVendors();
+});
+exportForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  await downloadAdminExport();
+});
+document.querySelector('#close-export-dialog').addEventListener('click', () => exportDialog.close());
+document.querySelector('#cancel-export').addEventListener('click', () => exportDialog.close());
+
+async function renderActivity() {
+  if (!(await isAdminAuthenticated())) {
     document.querySelector('#activity-count').textContent = '0 events';
     document.querySelector('#admin-activity').innerHTML = '<p class="empty-state">Sign in to view access logs.</p>';
     return;
@@ -204,13 +381,15 @@ document.querySelectorAll('.workspace-tab').forEach((tab) => tab.addEventListene
   if (tab.dataset.view === 'activity') renderActivity();
 }));
 
-function refreshAdminDashboard() {
+async function refreshAdminDashboard() {
   renderProducts();
-  renderSubmissions();
-  renderOrders();
-  renderUsers();
-  renderActivity();
+  await renderSubmissions();
+  await renderOrders();
+  await renderUsers();
+  await renderActivity();
 }
 
-document.addEventListener('morrow-admin-auth-change', refreshAdminDashboard);
+document.addEventListener('morrow-admin-auth-change', () => {
+  refreshAdminDashboard();
+});
 refreshAdminDashboard();

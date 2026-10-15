@@ -9,6 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600&family=Playfair+Display:wght@500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="role-auth.css" />
 </head>
 <body>
   <a href="#main-content" class="skip-link">Skip to main content</a>
@@ -106,12 +107,19 @@
         <button class="account-tab active" type="button" role="tab" aria-selected="true" data-account-mode="login">Log in</button>
         <button class="account-tab" type="button" role="tab" aria-selected="false" data-account-mode="signup">Sign up</button>
       </div>
+      <div class="account-signup-choice" hidden>
+        <p class="eyebrow">Choose your account type</p>
+        <div class="account-signup-options">
+          <button type="button" data-signup-role="user"><strong>User</strong><span>Shop the collection and manage your orders.</span></button>
+          <button type="button" data-signup-role="vendor"><strong>Vendor</strong><span>Submit your work and manage your listings.</span></button>
+        </div>
+      </div>
       <form class="account-form">
         <div class="account-name-field" hidden><label for="account-name">Full name</label><input id="account-name" type="text" autocomplete="name" /></div>
         <label for="account-email">Email address</label><input id="account-email" type="email" autocomplete="email" required />
         <label for="account-password">Password</label>
         <div class="password-input-wrap">
-          <input id="account-password" type="password" autocomplete="current-password" minlength="6" required />
+          <input id="account-password" type="password" autocomplete="current-password" minlength="8" required />
           <button class="password-toggle" type="button" aria-label="Show password">Show</button>
         </div>
         <button class="account-submit" type="submit">Log in <span>↗</span></button>

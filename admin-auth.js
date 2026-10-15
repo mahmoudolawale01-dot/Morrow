@@ -38,19 +38,41 @@ function showMessage(message) {
 
 function setMode() {
   const hasAccount = Boolean(readAccount());
-  authIntro.textContent = hasAccount ? 'Sign in to manage the catalog.' : 'Create an admin password for this browser to continue.';
-  confirmInput.hidden = hasAccount;
-  confirmLabel.hidden = hasAccount;
-  passwordInput.autocomplete = hasAccount ? 'current-password' : 'new-password';
-  confirmInput.required = !hasAccount;
-  authSubmit.innerHTML = hasAccount ? 'Sign in <span>→</span>' : 'Create admin account <span>→</span>';
+  authIntro.textContent = 'Sign in with the admin account to manage the catalog.';
+  confirmInput.hidden = true;
+  confirmLabel.hidden = true;
+  passwordInput.autocomplete = 'current-password';
+  confirmInput.required = false;
+  authSubmit.innerHTML = hasAccount ? 'Sign in <span>→</span>' : 'Sign in <span>→</span>';
+}
+
+async function syncServerAdminAuth() {
+  if (!window.MorrowApi) return false;
+
+  try {
+    const response = await window.MorrowApi.apiRequest('/api/auth/me');
+    if (response.user && response.user.role === 'admin') {
+      localStorage.setItem(ADMIN_ACCOUNT_KEY, JSON.stringify({ username: response.user.email }));
+      sessionStorage.setItem(ADMIN_SESSION_KEY, 'authenticated');
+      setAuthenticated(true);
+      return true;
+    }
+  } catch {
+    // Fall back to the form for manual admin sign-in.
+  }
+
+  return false;
 }
 
 authForm.addEventListener('submit', async (event) => {
   event.preventDefault();
-  const username = usernameInput.value.trim();
+  const email = usernameInput.value.trim().toLowerCase();
   const password = passwordInput.value;
-  const account = readAccount();
+
+  if (!email || !password) {
+    showMessage('Enter the admin email and password.');
+    return;
+  }
 
   if (password.length < 8) {
     showMessage('Use at least 8 characters for the admin password.');
@@ -58,28 +80,24 @@ authForm.addEventListener('submit', async (event) => {
   }
 
   authSubmit.disabled = true;
-  const passwordHash = await hashPassword(password);
 
-  if (!account) {
-    if (password !== confirmInput.value) {
-      showMessage('The passwords do not match.');
-      authSubmit.disabled = false;
-      return;
+  try {
+    const response = await window.MorrowApi.apiRequest('/api/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ email, password }),
+    });
+
+    if (!response.user || response.user.role !== 'admin') {
+      throw new Error('This account does not have admin access.');
     }
-    localStorage.setItem(ADMIN_ACCOUNT_KEY, JSON.stringify({ username, passwordHash }));
+
+    localStorage.setItem(ADMIN_ACCOUNT_KEY, JSON.stringify({ username: response.user.email }));
     sessionStorage.setItem(ADMIN_SESSION_KEY, 'authenticated');
     setAuthenticated(true);
-    return;
-  }
-
-  if (username !== account.username || passwordHash !== account.passwordHash) {
-    showMessage('The username or password is incorrect.');
+  } catch (error) {
+    showMessage(error.message || 'The admin email or password is incorrect.');
     authSubmit.disabled = false;
-    return;
   }
-
-  sessionStorage.setItem(ADMIN_SESSION_KEY, 'authenticated');
-  setAuthenticated(true);
 });
 
 document.querySelector('#admin-logout').addEventListener('click', () => {
@@ -89,7 +107,15 @@ document.querySelector('#admin-logout').addEventListener('click', () => {
   showMessage('');
   setMode();
   setAuthenticated(false);
+  if (window.MorrowApi) {
+    window.MorrowApi.apiRequest('/api/auth/logout', { method: 'POST' }).catch(() => {});
+  }
 });
 
 setMode();
-setAuthenticated(sessionStorage.getItem(ADMIN_SESSION_KEY) === 'authenticated' && Boolean(readAccount()));
+(async () => {
+  const authenticated = await syncServerAdminAuth();
+  if (!authenticated) {
+    setAuthenticated(sessionStorage.getItem(ADMIN_SESSION_KEY) === 'authenticated' && Boolean(readAccount()));
+  }
+})();

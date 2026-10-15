@@ -10,9 +10,11 @@ const accountDialog = document.querySelector('.account-dialog');
 const accountForm = document.querySelector('.account-form');
 const accountWelcome = document.querySelector('.account-welcome');
 const accountTabs = document.querySelectorAll('.account-tab');
+const accountSignupChoice = document.querySelector('.account-signup-choice');
 const accountRecoveryForm = document.querySelector('.account-recovery-form');
 const accountRecoveryLink = document.querySelector('.account-recovery-link');
 const accountRecoveryBack = document.querySelector('.account-back');
+let selectedSignupRole = null;
 let toastTimer;
 
 function injectPolishStyles() {
@@ -1101,6 +1103,9 @@ function setAccountMode(mode) {
     tab.classList.toggle('active', isActive);
     tab.setAttribute('aria-selected', isActive);
   });
+  selectedSignupRole = null;
+  accountSignupChoice.hidden = !isSignup;
+  accountForm.hidden = isSignup;
   accountForm.querySelector('.account-name-field').hidden = !isSignup;
   accountForm.querySelector('#account-name').required = isSignup;
   accountForm.querySelector('#account-password').autocomplete = isSignup ? 'new-password' : 'current-password';
@@ -1211,6 +1216,18 @@ document.querySelector('[data-action="account"]').addEventListener('click', asyn
 });
 
 accountTabs.forEach((tab) => tab.addEventListener('click', () => setAccountMode(tab.dataset.accountMode)));
+accountSignupChoice.querySelectorAll('[data-signup-role]').forEach((button) => {
+  button.addEventListener('click', () => {
+    selectedSignupRole = button.dataset.signupRole;
+    if (selectedSignupRole === 'vendor') {
+      window.location.href = 'seller.html?mode=signup';
+      return;
+    }
+    accountSignupChoice.hidden = true;
+    accountForm.hidden = false;
+    accountForm.querySelector('#account-name').focus();
+  });
+});
 const accountClose = document.querySelector('.account-close');
 if (accountClose) {
   accountClose.addEventListener('click', () => {
@@ -1263,10 +1280,14 @@ accountForm.addEventListener('submit', async (event) => {
   const name = accountForm.querySelector('#account-name').value.trim();
   const password = accountForm.querySelector('#account-password').value;
   const accountMessage = accountForm.querySelector('.account-message');
+  if (isSignup && selectedSignupRole !== 'user') {
+    accountMessage.textContent = 'Choose User to continue with customer signup.';
+    return;
+  }
   try {
     const response = await window.MorrowApi.apiRequest(isSignup ? '/api/auth/register' : '/api/auth/login', {
       method: 'POST',
-      body: JSON.stringify({ email, name, password }),
+      body: JSON.stringify({ email, name, password, role: isSignup ? 'customer' : undefined }),
     });
     persistAuthenticatedAccount(response.user);
     accountDialog.close();

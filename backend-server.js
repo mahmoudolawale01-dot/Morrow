@@ -18,10 +18,19 @@ const databaseUrl = process.env.DATABASE_URL || supabaseConfig.databaseUrl || nu
 const isPostgresMode = Boolean(databaseUrl);
 const isSupabaseMode = Boolean(supabaseConfig.enabled && supabaseAdmin);
 const isProduction = process.env.NODE_ENV === 'production';
+const adminEmail = (process.env.ADMIN_EMAIL || 'admin@morrow.local').trim().toLowerCase();
+const adminPassword = process.env.ADMIN_PASSWORD || 'morrow-admin';
+const adminName = process.env.ADMIN_NAME || 'Morrow Admin';
 const port = Number(process.env.API_PORT || process.env.PORT) || 3001;
 const host = process.env.API_HOST || process.env.HOST || (isProduction ? '0.0.0.0' : '127.0.0.1');
 const allowedOrigins = (process.env.ALLOWED_ORIGINS || 'http://127.0.0.1:3000,http://localhost:3000').split(',').map((origin) => origin.trim()).filter(Boolean);
 let postgresClient = null;
+
+function normalizeRole(role) {
+  const normalized = String(role || 'customer').trim().toLowerCase();
+  if (normalized === 'vendor') return 'seller';
+  return ['customer', 'admin', 'seller'].includes(normalized) ? normalized : 'customer';
+}
 
 function resolveAllowedOrigin(origin) {
   if (origin && allowedOrigins.includes(origin)) return origin;
@@ -131,19 +140,36 @@ async function initializeDatabase() {
     if (missingTables.length) {
       throw new Error(`PostgreSQL schema is missing tables: ${missingTables.join(', ')}. Apply the Supabase migration before starting the API.`);
     }
+    await runSql("ALTER TABLE users ADD COLUMN IF NOT EXISTS phone TEXT NOT NULL DEFAULT ''; ALTER TABLE users ADD COLUMN IF NOT EXISTS address TEXT NOT NULL DEFAULT '';");
+  } else {
+    const schema = fs.readFileSync(schemaPath, 'utf8');
+    childProcess.execFileSync(sqlitePath, [databasePath], { input: schema, encoding: 'utf8' });
+    const userColumns = (await runSql('PRAGMA table_info(users);')).map((column) => column.name);
+    if (!userColumns.includes('phone')) await runSql("ALTER TABLE users ADD COLUMN phone TEXT NOT NULL DEFAULT '';");
+    if (!userColumns.includes('address')) await runSql("ALTER TABLE users ADD COLUMN address TEXT NOT NULL DEFAULT '';");
+    const productColumns = (await runSql('PRAGMA table_info(products);')).map((column) => column.name);
+    if (!productColumns.includes('slug')) {
+      childProcess.execFileSync(sqlitePath, [databasePath], { input: 'ALTER TABLE products RENAME TO products_legacy;', encoding: 'utf8' });
+      childProcess.execFileSync(sqlitePath, [databasePath], { input: schema, encoding: 'utf8' });
+    }
+    for (const product of seedProducts) {
+      await runSql(`INSERT OR IGNORE INTO products (slug, name, description, category, price_cents, image_url, image_alt, meta, tag, sort_order) VALUES (${product.map(sqlValue).join(', ')});`);
+    }
+  }
+
+  await ensureAdminBootstrap();
+}
+
+async function ensureAdminBootstrap() {
+  const adminHash = hashPassword(adminPassword);
+  const existing = (await runSql(`SELECT id, role FROM users WHERE email = ${sqlValue(adminEmail)} LIMIT 1;`))[0];
+
+  if (!existing) {
+    await runSql(`INSERT INTO users (email, name, password_hash, role, status) VALUES (${sqlValue(adminEmail)}, ${sqlValue(adminName)}, ${sqlValue(adminHash)}, 'admin', 'active');`);
     return;
   }
 
-  const schema = fs.readFileSync(schemaPath, 'utf8');
-  childProcess.execFileSync(sqlitePath, [databasePath], { input: schema, encoding: 'utf8' });
-  const productColumns = (await runSql('PRAGMA table_info(products);')).map((column) => column.name);
-  if (!productColumns.includes('slug')) {
-    childProcess.execFileSync(sqlitePath, [databasePath], { input: 'ALTER TABLE products RENAME TO products_legacy;', encoding: 'utf8' });
-    childProcess.execFileSync(sqlitePath, [databasePath], { input: schema, encoding: 'utf8' });
-  }
-  for (const product of seedProducts) {
-    await runSql(`INSERT OR IGNORE INTO products (slug, name, description, category, price_cents, image_url, image_alt, meta, tag, sort_order) VALUES (${product.map(sqlValue).join(', ')});`);
-  }
+  await runSql(`UPDATE users SET name = ${sqlValue(adminName)}, password_hash = ${sqlValue(adminHash)}, role = 'admin', status = 'active' WHERE id = ${Number(existing.id)};`);
 }
 
 function readBody(request) {
@@ -248,6 +274,18 @@ async function requireUser(response, request, role) {
   return user;
 }
 
+function serializeUserRow(userRow) {
+  if (!userRow) return null;
+  return {
+    id: Number(userRow.id),
+    email: userRow.email,
+    name: userRow.name,
+    role: userRow.role,
+    status: userRow.status,
+    createdAt: userRow.created_at,
+  };
+}
+
 async function checkDatabaseConnection() {
   try {
     if (isPostgresMode) {
@@ -313,10 +351,15 @@ async function handleApi(request, response, requestUrl) {
     const email = String(body.email || '').trim().toLowerCase();
     const name = String(body.name || '').trim();
     const password = String(body.password || '');
+    const role = normalizeRole(body.role);
+    const phone = String(body.phone || '').trim();
+    const address = String(body.address || '').trim();
+    if (!['customer', 'seller'].includes(role)) { sendJson(response, 400, { error: 'Registration role must be user or vendor.' }); return true; }
     if (!email || !name || password.length < 8) { sendJson(response, 400, { error: 'Name, email, and a password of at least 8 characters are required.' }); return true; }
+    if (role === 'seller' && (!phone || !address)) { sendJson(response, 400, { error: 'Phone number and address are required for vendor signup.' }); return true; }
     if ((await runSql(`SELECT id FROM users WHERE email = ${sqlValue(email)} LIMIT 1;`)).length) { sendJson(response, 409, { error: 'An account already exists for that email.' }); return true; }
-    await runSql(`INSERT INTO users (email, name, password_hash) VALUES (${sqlValue(email)}, ${sqlValue(name)}, ${sqlValue(hashPassword(password))});`);
-    const user = (await runSql(`SELECT id, email, name, role, status FROM users WHERE email = ${sqlValue(email)} LIMIT 1;`))[0];
+    await runSql(`INSERT INTO users (email, name, phone, address, password_hash, role) VALUES (${sqlValue(email)}, ${sqlValue(name)}, ${sqlValue(phone)}, ${sqlValue(address)}, ${sqlValue(hashPassword(password))}, ${sqlValue(role)});`);
+    const user = (await runSql(`SELECT id, email, name, phone, address, role, status FROM users WHERE email = ${sqlValue(email)} LIMIT 1;`))[0];
     const token = await createSession(user.id, user.email);
     sendJson(response, 201, { user: { ...user, signed_in_at: new Date().toISOString() } }, { 'Set-Cookie': getSessionCookieHeader(token) });
     return true;
@@ -333,7 +376,7 @@ async function handleApi(request, response, requestUrl) {
       return true;
     }
     const token = await createSession(user.id, user.email);
-    sendJson(response, 200, { user: { id: user.id, email: user.email, name: user.name, role: user.role, status: user.status, signed_in_at: new Date().toISOString() } }, { 'Set-Cookie': getSessionCookieHeader(token) });
+    sendJson(response, 200, { user: { id: user.id, email: user.email, name: user.name, phone: user.phone, address: user.address, role: user.role, status: user.status, signed_in_at: new Date().toISOString() } }, { 'Set-Cookie': getSessionCookieHeader(token) });
     return true;
   }
 
@@ -406,6 +449,208 @@ async function handleApi(request, response, requestUrl) {
     const rows = await runSql(`SELECT id FROM orders WHERE user_id = ${Number(user.id)} ORDER BY created_at DESC, id DESC;`);
     const orders = await Promise.all(rows.map((row) => readOrder(`id = ${Number(row.id)}`)));
     sendJson(response, 200, { orders });
+    return true;
+  }
+
+  if (requestUrl.pathname === '/api/admin/users' && request.method === 'GET') {
+    if (!await requireUser(response, request, 'admin')) return true;
+    const rows = await runSql('SELECT id, email, name, role, status, created_at FROM users ORDER BY created_at DESC, id DESC;');
+    sendJson(response, 200, { users: rows.map((row) => serializeUserRow(row)) });
+    return true;
+  }
+
+  if (requestUrl.pathname === '/api/admin/export-data' && request.method === 'GET') {
+    if (!await requireUser(response, request, 'admin')) return true;
+
+    const type = requestUrl.searchParams.get('type');
+    if (!['users', 'vendors', 'products'].includes(type)) {
+      sendJson(response, 400, { error: 'Choose users, vendors, or products to export.' });
+      return true;
+    }
+
+    const from = requestUrl.searchParams.get('from') || '';
+    const to = requestUrl.searchParams.get('to') || '';
+    const category = requestUrl.searchParams.get('category') || '';
+    const vendorId = requestUrl.searchParams.get('vendorId') || '';
+    const sort = requestUrl.searchParams.get('sort') || 'date';
+    const validDate = (value) => !value || /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(`${value}T00:00:00.000Z`));
+    if (!validDate(from) || !validDate(to) || from && to && from > to) {
+      sendJson(response, 400, { error: 'Enter a valid date range.' });
+      return true;
+    }
+
+    let records;
+    if (type === 'users' || type === 'vendors') {
+      const role = type === 'vendors' ? 'seller' : 'customer';
+      const rows = await runSql(`SELECT id, email, name, phone, address, role, status, created_at FROM users WHERE role = ${sqlValue(role)} ORDER BY created_at DESC, id DESC;`);
+      records = rows.map((row) => ({
+        id: Number(row.id),
+        name: row.name,
+        email: row.email,
+        phone: row.phone || '',
+        address: row.address || '',
+        role: row.role,
+        status: row.status,
+        createdAt: row.created_at,
+      }));
+      if (type === 'vendors' && vendorId) records = records.filter((record) => record.id === Number(vendorId));
+    } else {
+      const rows = await runSql('SELECT slug, name, description, category, price_cents, image_url, meta, published, created_at FROM products ORDER BY created_at DESC, id DESC;');
+      records = rows.map((row) => ({
+        id: row.slug,
+        name: row.name,
+        category: row.category,
+        price: Number(row.price_cents) / 100,
+        description: row.description,
+        material: row.meta,
+        image: row.image_url,
+        published: Boolean(row.published),
+        createdAt: row.created_at,
+      }));
+      if (category) records = records.filter((record) => record.category === category);
+    }
+
+    if (from || to) {
+      const start = from ? Date.parse(`${from}T00:00:00.000Z`) : Number.NEGATIVE_INFINITY;
+      const end = to ? Date.parse(`${to}T23:59:59.999Z`) : Number.POSITIVE_INFINITY;
+      records = records.filter((record) => {
+        const timestamp = new Date(record.createdAt).getTime();
+        return Number.isFinite(timestamp) && timestamp >= start && timestamp <= end;
+      });
+    }
+
+    const compareName = (left, right) => String(left.name || '').localeCompare(String(right.name || ''));
+    if (sort === 'name' || sort === 'vendor') records.sort(compareName);
+    else if (sort === 'category') records.sort((left, right) => String(left.category || '').localeCompare(String(right.category || '')) || compareName(left, right));
+    else records.sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime());
+
+    sendJson(response, 200, { type, records });
+    return true;
+  }
+
+  const adminUserMatch = requestUrl.pathname.match(/^\/api\/admin\/users\/(\d+)$/);
+  if (adminUserMatch && (request.method === 'PATCH' || request.method === 'DELETE')) {
+    const currentAdmin = await requireUser(response, request, 'admin');
+    if (!currentAdmin) return true;
+
+    const targetId = Number(adminUserMatch[1]);
+    const targetUser = (await runSql(`SELECT id, email, name, role, status, created_at FROM users WHERE id = ${targetId} LIMIT 1;`))[0];
+    if (!targetUser) {
+      sendJson(response, 404, { error: 'User not found.' });
+      return true;
+    }
+
+    if (Number(currentAdmin.id) === targetId) {
+      sendJson(response, 400, { error: 'You cannot update or delete your own admin account from this panel.' });
+      return true;
+    }
+
+    if (request.method === 'PATCH') {
+      const body = await readBody(request);
+      const nextStatus = body.status ? String(body.status).trim().toLowerCase() : targetUser.status;
+      const nextRole = body.role ? String(body.role).trim().toLowerCase() : targetUser.role;
+      const nextName = body.name !== undefined ? String(body.name).trim() : targetUser.name;
+
+      if (!['active', 'suspended', 'deleted'].includes(nextStatus)) {
+        sendJson(response, 400, { error: 'Status must be active, suspended, or deleted.' });
+        return true;
+      }
+      if (!['customer', 'admin', 'seller'].includes(nextRole)) {
+        sendJson(response, 400, { error: 'Role must be customer, admin, or seller.' });
+        return true;
+      }
+      if (!nextName) {
+        sendJson(response, 400, { error: 'A user name is required.' });
+        return true;
+      }
+
+      await runSql(`UPDATE users SET name = ${sqlValue(nextName)}, role = ${sqlValue(nextRole)}, status = ${sqlValue(nextStatus)} WHERE id = ${targetId};`);
+      if (nextStatus === 'deleted') {
+        await runSql(`UPDATE sessions SET revoked_at = datetime('now') WHERE user_id = ${targetId};`);
+      }
+
+      const updatedUser = (await runSql(`SELECT id, email, name, role, status, created_at FROM users WHERE id = ${targetId} LIMIT 1;`))[0];
+      sendJson(response, 200, { user: serializeUserRow(updatedUser) });
+      return true;
+    }
+
+    await runSql(`UPDATE users SET status = 'deleted' WHERE id = ${targetId}; UPDATE sessions SET revoked_at = datetime('now') WHERE user_id = ${targetId};`);
+    const updatedUser = (await runSql(`SELECT id, email, name, role, status, created_at FROM users WHERE id = ${targetId} LIMIT 1;`))[0];
+    sendJson(response, 200, { user: serializeUserRow(updatedUser), deleted: true });
+    return true;
+  }
+
+  if (requestUrl.pathname === '/api/seller/submissions' && request.method === 'POST') {
+    const user = await requireUser(response, request, 'seller');
+    if (!user) return true;
+
+    const body = await readBody(request);
+    const payload = {
+      seller: String(body.seller || user.name || 'Vendor'),
+      email: String(body.email || user.email || '').trim(),
+      name: String(body.name || '').trim(),
+      category: String(body.category || 'ceramics').trim(),
+      price: Number(body.price || 0),
+      image: String(body.image || '').trim(),
+      description: String(body.description || '').trim(),
+      material: String(body.material || '').trim(),
+      status: 'Pending review',
+      submittedAt: new Date().toISOString(),
+    };
+
+    if (!payload.name || !payload.email || !payload.image || !payload.description || !payload.material) {
+      sendJson(response, 400, { error: 'Seller name, product name, email, description, material, and image are required.' });
+      return true;
+    }
+
+    await runSql(`INSERT INTO seller_submissions (user_id, seller_email, product_json, status) VALUES (${Number(user.id)}, ${sqlValue(payload.email)}, ${sqlValue(JSON.stringify(payload))}, 'pending');`);
+    sendJson(response, 201, { submission: payload });
+    return true;
+  }
+
+  if (requestUrl.pathname === '/api/seller/submissions' && request.method === 'GET') {
+    const user = await requireUser(response, request, 'seller');
+    if (!user) return true;
+
+    const rows = await runSql(`SELECT id, seller_email, product_json, status, created_at FROM seller_submissions WHERE user_id = ${Number(user.id)} ORDER BY created_at DESC, id DESC;`);
+    const submissions = rows.map((row) => {
+      const product = JSON.parse(row.product_json || '{}');
+      return {
+        id: Number(row.id),
+        seller: product.seller || row.seller_email,
+        email: product.email || row.seller_email,
+        name: product.name || 'Untitled item',
+        category: product.category || 'uncategorized',
+        price: Number(product.price || 0),
+        image: product.image || '',
+        description: product.description || '',
+        material: product.material || '',
+        status: row.status,
+        submittedAt: row.created_at,
+      };
+    });
+
+    sendJson(response, 200, { submissions });
+    return true;
+  }
+
+  if (requestUrl.pathname === '/api/admin/submissions' && request.method === 'GET') {
+    if (!await requireUser(response, request, 'admin')) return true;
+    const rows = await runSql('SELECT id, seller_email, product_json, status, created_at FROM seller_submissions ORDER BY created_at DESC, id DESC;');
+    const submissions = rows.map((row) => ({
+      id: Number(row.id),
+      seller: JSON.parse(row.product_json).seller || row.seller_email,
+      email: JSON.parse(row.product_json).email || row.seller_email,
+      name: JSON.parse(row.product_json).name || 'Untitled item',
+      category: JSON.parse(row.product_json).category || 'uncategorized',
+      price: Number(JSON.parse(row.product_json).price || 0),
+      image: JSON.parse(row.product_json).image || '',
+      description: JSON.parse(row.product_json).description || '',
+      material: JSON.parse(row.product_json).material || '',
+      status: row.status,
+      submittedAt: row.created_at,
+    }));
+    sendJson(response, 200, { submissions });
     return true;
   }
 
