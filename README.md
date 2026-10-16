@@ -14,6 +14,51 @@ This starts:
 - the frontend on port 3000
 - the backend API on port 3001
 
+Equivalent npm commands are `npm run dev` or `npm start`. The app uses SQLite by default; set the database and deployment variables described in [.env.example](.env.example) when changing environments.
+
+## Current implementation and AI handoff
+
+The following flows are implemented in the current project state:
+
+- Customer signup and login use the storefront account dialog and backend session cookie (`morrow_session`). Customers need to be signed in to place orders.
+- Signup first offers **User** or **Vendor**. User creates a customer account. Vendor opens the seller signup flow and must provide a name, email, phone number, address, and password. The backend normalizes `vendor` to the `seller` role and requires the phone and address.
+- Admin accounts are bootstrapped from `ADMIN_EMAIL`, `ADMIN_PASSWORD`, and `ADMIN_NAME`; public registration cannot create an admin account. Admin API routes check the server-side session and role.
+- Sellers can submit products and see their own submissions and review statuses (pending, approved, rejected, with reviewer notes). Admins can review the seller submission queue and approve or reject items via admin-protected endpoints (`POST /api/admin/submissions/:id/approve` and `.../reject`). Approved submissions automatically create items in the database catalog with clean slugs and are immediately available on the storefront.
+- The admin workspace can create, edit, publish/unpublish, reorder, delete, and reset products through admin-only API routes. Admin product management, the storefront, and product exports now use the same database catalog. Each catalog item's edit actions display the vendor that uploaded the product along with the upload date and time. The Edit Product dialog also shows upload info and supports vendor editing. Existing browser-local catalog data is migrated once on the first authenticated admin load.
+- The admin workspace can export Users (customer accounts), Vendors, or Products as real `.xlsx` workbooks. Exports support inclusive date ranges, vendor selection, product-type filtering, and applicable sorting. The export endpoint is `GET /api/admin/export-data`; it requires an admin session. ExcelJS is loaded from `node_modules` in the admin page.
+
+### Useful files
+
+- [backend-server.js](backend-server.js) – auth, role checks, database upgrades, seller submissions review lifecycle, and admin export endpoint
+- [admin.html](admin.html) / [admin.js](admin.js) – admin workspace, catalog CRUD, submission approval/rejection, and export dialog/workbook generation
+- [admin-export.css](admin-export.css) – export dialog layout
+- [seller.html](seller.html) / [seller.js](seller.js) – vendor signup/login, submission form, and seller submission status tracking
+- [index.html](index.html) / [app.js](app.js) – storefront account-type choice and customer signup
+- [database/schema.sql](database/schema.sql) – SQLite schema
+- [supabase/migrations/20261001000000_initial_schema.sql](supabase/migrations/20261001000000_initial_schema.sql) – Postgres/Supabase schema
+- [customer-flow-check.js](customer-flow-check.js) – role, order, vendor, submission review, and export API regression checks
+
+### Verify changes
+
+From the project root:
+
+```bash
+npm run smoke
+npm run flow-check
+```
+
+The smoke check verifies the frontend and API health routes. The flow check covers customer registration/orders, admin access and user management, vendor signup/contact validation/submissions, seller submission review actions (approve/reject/reasons/catalog sync), and export access/filtering. The admin workbook flow has also been browser-checked by generating and parsing each workbook with ExcelJS.
+
+### Known gaps and next steps
+
+1. Revisit the frontend-only admin page gate before production. Keep relying on backend role checks for protected data and mutations.
+2. Run `npm audit --omit=dev` and review current advisories before deployment. A recent audit reported advisories in existing Next.js dependencies and in ExcelJS's transitive dependency tree; no forced dependency upgrades were applied.
+
+### Suggested continuation sequence
+
+1. Check `git status` and read this handoff before editing; preserve any existing worktree changes.
+2. Start the app with `node dev.js` and run both verification commands above.
+
 ## Deploying with Supabase
 
 This project can be migrated to a hosted Supabase Postgres setup while keeping the current API contract intact.

@@ -47,15 +47,28 @@ function renderSubmissions(submissions) {
     return;
   }
 
-  submissionsContainer.innerHTML = submissions.map((submission) => `
-    <article class="submission-item">
-      <div class="submission-media"><img src="${submission.image || 'https://images.unsplash.com/photo-1517705008128-361805f42e86?auto=format&fit=crop&w=800&q=85'}" alt="${submission.name}" /></div>
-      <div class="submission-copy">
-        <div><strong>${submission.name}</strong><span>${submission.seller} · ${submission.category} · $${Number(submission.price || 0)}</span></div>
-        <span class="status-pill">${submission.status}</span>
-      </div>
-    </article>
-  `).join('');
+  submissionsContainer.innerHTML = submissions.map((submission) => {
+    const isApproved = submission.status === 'approved';
+    const isRejected = submission.status === 'rejected';
+    return `
+      <article class="submission-item">
+        <div class="submission-media"><img src="${submission.image || 'https://images.unsplash.com/photo-1517705008128-361805f42e86?auto=format&fit=crop&w=800&q=85'}" alt="${submission.name}" /></div>
+        <div class="submission-copy">
+          <div>
+            <strong>${submission.name}</strong>
+            <span>${submission.seller} · ${submission.category} · $${Number(submission.price || 0)}</span>
+            ${submission.reason ? `<span style="color: #a24936; font-size: 11px; margin-top: 4px;">Reviewer note: ${submission.reason}</span>` : ''}
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span class="status-pill ${isApproved ? 'is-live' : ''}" ${isRejected ? 'style="color: #a24936;"' : ''}>${submission.status}</span>
+            ${isApproved && submission.productSlug ? `
+              <a href="product.html?product=${encodeURIComponent(submission.productSlug)}" target="_blank" class="workspace-store-link" style="font-size: 11px;">View in store ↗</a>
+            ` : ''}
+          </div>
+        </div>
+      </article>
+    `;
+  }).join('');
 }
 
 async function refreshSellerSubmissions() {

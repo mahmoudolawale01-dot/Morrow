@@ -1,8 +1,8 @@
 const PRODUCTS_KEY = 'morrow-admin-products';
-const SUBMISSIONS_KEY = 'morrow-seller-submissions';
+const PRODUCT_MIGRATION_KEY = 'morrow-admin-products-server-migrated';
 const ADMIN_LOCAL_ACCOUNT_KEY = 'morrow-admin-account';
 const ADMIN_LOCAL_SESSION_KEY = 'morrow-admin-session';
-const defaultProducts = window.MorrowProducts.getAll().map((product) => ({ ...product, published: true }));
+let adminProducts = [];
 const productDialog = document.querySelector('#product-dialog');
 const productForm = document.querySelector('#product-form');
 const productsBody = document.querySelector('#admin-products');
@@ -43,11 +43,7 @@ function readJson(key, fallback) {
 }
 
 function getProducts() {
-  return readJson(PRODUCTS_KEY, defaultProducts);
-}
-
-function saveProducts(products) {
-  localStorage.setItem(PRODUCTS_KEY, JSON.stringify(products));
+  return adminProducts;
 }
 
 function showToast(message) {
@@ -56,18 +52,80 @@ function showToast(message) {
   setTimeout(() => toast.classList.remove('show'), 2400);
 }
 
-function renderProducts() {
+async function migrateLegacyProducts() {
+  if (localStorage.getItem(PRODUCT_MIGRATION_KEY) === 'complete') return;
+
+  const legacyProducts = readJson(PRODUCTS_KEY, []);
+  if (Array.isArray(legacyProducts)) {
+    for (const legacyProduct of legacyProducts) {
+      if (!legacyProduct?.name) continue;
+      const product = {
+        name: legacyProduct.name,
+        category: legacyProduct.category || 'ceramics',
+        price: Number(legacyProduct.price) || 0,
+        description: legacyProduct.description || legacyProduct.name,
+        image: legacyProduct.image || legacyProduct.imageUrl || '',
+        imageAlt: legacyProduct.imageAlt || legacyProduct.name,
+        meta: legacyProduct.meta || 'Not specified',
+        tag: legacyProduct.tag || '',
+        published: legacyProduct.published !== false,
+      };
+      const existing = adminProducts.find((item) => item.id === legacyProduct.id);
+      const path = existing
+        ? `/api/admin/products/${encodeURIComponent(existing.id)}`
+        : '/api/admin/products';
+      const response = await window.MorrowApi.apiRequest(path, {
+        method: existing ? 'PATCH' : 'POST',
+        body: JSON.stringify(product),
+      });
+      if (existing) Object.assign(existing, response.product);
+      else adminProducts.push(response.product);
+    }
+  }
+
+  localStorage.setItem(PRODUCT_MIGRATION_KEY, 'complete');
+  localStorage.removeItem(PRODUCTS_KEY);
+}
+
+async function renderProducts() {
+  try {
+    const response = await window.MorrowApi.apiRequest('/api/admin/products');
+    adminProducts = Array.isArray(response.products) ? response.products : [];
+    await migrateLegacyProducts();
+    if (localStorage.getItem(PRODUCT_MIGRATION_KEY) === 'complete' && adminProducts.length) {
+      const refreshed = await window.MorrowApi.apiRequest('/api/admin/products');
+      adminProducts = Array.isArray(refreshed.products) ? refreshed.products : adminProducts;
+    }
+  } catch (error) {
+    document.querySelector('#product-count').textContent = 'Products unavailable';
+    productsBody.innerHTML = `<tr><td colspan="6">${error.message || 'Unable to load products.'}</td></tr>`;
+    return;
+  }
+
   const products = getProducts();
   document.querySelector('#product-count').textContent = `${products.length} product${products.length === 1 ? '' : 's'}`;
-  productsBody.innerHTML = products.map((product, index) => `
+  productsBody.innerHTML = products.map((product, index) => {
+    const vendorName = product.vendor || 'Morrow';
+    const uploadTime = formatOrderDate(product.createdAt);
+    return `
     <tr>
       <td><strong>${product.name}</strong><span class="table-subtext">${product.meta}</span></td>
       <td>${product.category}</td>
       <td>$${product.price}</td>
       <td><span class="status-pill ${product.published ? 'is-live' : ''}">${product.published ? 'Published' : 'Hidden'}</span></td>
       <td><div class="order-controls"><button type="button" data-move="up" data-index="${index}" aria-label="Move ${product.name} up">↑</button><button type="button" data-move="down" data-index="${index}" aria-label="Move ${product.name} down">↓</button></div></td>
-      <td><div class="row-actions"><button type="button" data-edit="${product.id}">Edit</button><button type="button" data-delete="${product.id}">Delete</button></div></td>
-    </tr>`).join('');
+      <td>
+        <div class="row-actions">
+          <button type="button" data-edit="${product.id}" title="Uploaded by ${vendorName} on ${uploadTime}">Edit</button>
+          <button type="button" data-delete="${product.id}">Delete</button>
+        </div>
+        <div class="table-subtext" style="margin-top: 6px; font-size: 11px; line-height: 1.4;">
+          <span><strong>Vendor:</strong> ${vendorName}</span><br />
+          <span><strong>Uploaded:</strong> ${uploadTime}</span>
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
   bindProductActions();
 }
 
@@ -77,6 +135,16 @@ function setField(id, value) {
 
 function openProduct(product) {
   document.querySelector('#form-title').textContent = product ? 'Edit product' : 'Add product';
+  const uploadInfo = document.querySelector('#product-upload-info');
+  if (uploadInfo) {
+    if (product) {
+      uploadInfo.textContent = `Uploaded by ${product.vendor || 'Morrow'} on ${formatOrderDate(product.createdAt)}`;
+      uploadInfo.hidden = false;
+    } else {
+      uploadInfo.textContent = '';
+      uploadInfo.hidden = true;
+    }
+  }
   setField('product-id', product?.id);
   setField('product-name', product?.name);
   setField('product-category', product?.category || 'ceramics');
@@ -84,28 +152,41 @@ function openProduct(product) {
   setField('product-description', product?.description);
   setField('product-image', product?.image);
   setField('product-meta', product?.meta);
+  setField('product-vendor', product?.vendor || (product ? 'Morrow' : ''));
   document.querySelector('#product-published').checked = product?.published !== false;
   productDialog.showModal();
 }
 
 function bindProductActions() {
   productsBody.querySelectorAll('[data-edit]').forEach((button) => button.addEventListener('click', () => openProduct(getProducts().find((product) => product.id === button.dataset.edit))));
-  productsBody.querySelectorAll('[data-delete]').forEach((button) => button.addEventListener('click', () => {
+  productsBody.querySelectorAll('[data-delete]').forEach((button) => button.addEventListener('click', async () => {
     const products = getProducts();
     const product = products.find((item) => item.id === button.dataset.delete);
     if (!product || !window.confirm(`Delete ${product.name}?`)) return;
-    saveProducts(products.filter((item) => item.id !== product.id));
-    renderProducts();
-    showToast('Product removed from the catalog');
+    try {
+      await window.MorrowApi.apiRequest(`/api/admin/products/${encodeURIComponent(product.id)}`, { method: 'DELETE' });
+      await renderProducts();
+      showToast('Product removed from the catalog');
+    } catch (error) {
+      showToast(error.message || 'Unable to delete product');
+    }
   }));
-  productsBody.querySelectorAll('[data-move]').forEach((button) => button.addEventListener('click', () => {
+  productsBody.querySelectorAll('[data-move]').forEach((button) => button.addEventListener('click', async () => {
     const products = getProducts();
     const index = Number(button.dataset.index);
     const target = button.dataset.move === 'up' ? index - 1 : index + 1;
     if (target < 0 || target >= products.length) return;
     [products[index], products[target]] = [products[target], products[index]];
-    saveProducts(products);
-    renderProducts();
+    try {
+      await window.MorrowApi.apiRequest('/api/admin/products/order', {
+        method: 'PATCH',
+        body: JSON.stringify({ products: products.map((product) => product.id) }),
+      });
+      await renderProducts();
+    } catch (error) {
+      showToast(error.message || 'Unable to reorder products');
+      await renderProducts();
+    }
   }));
 }
 
@@ -119,8 +200,62 @@ async function renderSubmissions() {
   try {
     const response = await window.MorrowApi.apiRequest('/api/admin/submissions');
     const submissions = Array.isArray(response.submissions) ? response.submissions : [];
-    document.querySelector('#submission-count').textContent = `${submissions.length} pending submission${submissions.length === 1 ? '' : 's'}`;
-    document.querySelector('#admin-submissions').innerHTML = submissions.length ? submissions.map((submission) => `<article class="submission-item"><div><strong>${submission.name}</strong><span>${submission.seller} · ${submission.category} · $${submission.price}</span></div><span class="status-pill">${submission.status}</span></article>`).join('') : '<p class="empty-state">No seller submissions yet.</p>';
+    const pendingCount = submissions.filter((item) => item.status === 'pending').length;
+    document.querySelector('#submission-count').textContent = `${pendingCount} pending submission${pendingCount === 1 ? '' : 's'}`;
+    document.querySelector('#admin-submissions').innerHTML = submissions.length ? submissions.map((submission) => {
+      const isApproved = submission.status === 'approved';
+      const isPending = submission.status === 'pending';
+      const isRejected = submission.status === 'rejected';
+      return `
+        <article class="submission-item" data-submission-id="${submission.id}">
+          <div>
+            <strong>${submission.name}</strong>
+            <span>${submission.seller} · ${submission.category} · $${submission.price}</span>
+            ${submission.reason ? `<span class="table-subtext" style="color: #a24936;">Rejection note: ${submission.reason}</span>` : ''}
+            ${submission.productSlug ? `<span class="table-subtext">Catalog slug: ${submission.productSlug}</span>` : ''}
+          </div>
+          <div class="row-actions" style="align-items: center; gap: 8px;">
+            <span class="status-pill ${isApproved ? 'is-live' : ''}" ${isRejected ? 'style="color: #a24936;"' : ''}>${submission.status}</span>
+            ${isPending ? `
+              <button type="button" data-submission-action="approve" data-submission-id="${submission.id}">Approve</button>
+              <button type="button" data-submission-action="reject" data-submission-id="${submission.id}" style="color: #a24936;">Reject</button>
+            ` : ''}
+            ${isApproved && submission.productSlug ? `
+              <a href="product.html?product=${encodeURIComponent(submission.productSlug)}" target="_blank" class="workspace-store-link" style="font-size: 11px;">View item ↗</a>
+            ` : ''}
+          </div>
+        </article>
+      `;
+    }).join('') : '<p class="empty-state">No seller submissions yet.</p>';
+
+    document.querySelectorAll('[data-submission-action]').forEach((button) => {
+      button.addEventListener('click', async () => {
+        const submissionId = button.dataset.submissionId;
+        const action = button.dataset.submissionAction;
+        try {
+          if (action === 'approve') {
+            if (!window.confirm('Approve this submission and add it to the live store catalog?')) return;
+            button.disabled = true;
+            await window.MorrowApi.apiRequest(`/api/admin/submissions/${submissionId}/approve`, { method: 'POST' });
+            showToast('Submission approved and added to catalog');
+          } else if (action === 'reject') {
+            const reason = window.prompt('Enter an optional reason for rejecting this submission:');
+            if (reason === null) return;
+            button.disabled = true;
+            await window.MorrowApi.apiRequest(`/api/admin/submissions/${submissionId}/reject`, {
+              method: 'POST',
+              body: JSON.stringify({ reason }),
+            });
+            showToast('Submission rejected');
+          }
+          await renderSubmissions();
+          await renderProducts();
+        } catch (error) {
+          showToast(error.message);
+          button.disabled = false;
+        }
+      });
+    });
   } catch (error) {
     document.querySelector('#submission-count').textContent = 'Submissions unavailable';
     document.querySelector('#admin-submissions').innerHTML = `<p class="empty-state">${error.message}</p>`;
@@ -338,12 +473,10 @@ async function renderActivity() {
   document.querySelector('#admin-activity').innerHTML = activity.length ? activity.map((event) => `<article class="admin-activity-item"><strong>${event.email}</strong><span>${event.type}</span><time>${formatOrderDate(event.date)}</time></article>`).join('') : '<p class="empty-state">No login activity yet.</p>';
 }
 
-productForm.addEventListener('submit', (event) => {
+productForm.addEventListener('submit', async (event) => {
   event.preventDefault();
-  const products = getProducts();
-  const id = document.querySelector('#product-id').value || `product-${Date.now()}`;
+  const id = document.querySelector('#product-id').value;
   const product = {
-    id,
     name: document.querySelector('#product-name').value.trim(),
     category: document.querySelector('#product-category').value,
     price: Number(document.querySelector('#product-price').value),
@@ -351,26 +484,36 @@ productForm.addEventListener('submit', (event) => {
     image: document.querySelector('#product-image').value.trim(),
     imageAlt: document.querySelector('#product-name').value.trim(),
     meta: document.querySelector('#product-meta').value.trim(),
+    vendor: document.querySelector('#product-vendor')?.value.trim() || 'Morrow',
     tag: '',
     published: document.querySelector('#product-published').checked,
   };
-  const existingIndex = products.findIndex((item) => item.id === id);
-  if (existingIndex >= 0) products[existingIndex] = { ...products[existingIndex], ...product };
-  else products.push(product);
-  saveProducts(products);
-  productDialog.close();
-  renderProducts();
-  showToast(existingIndex >= 0 ? 'Product updated' : 'Product added');
+  try {
+    await window.MorrowApi.apiRequest(id ? `/api/admin/products/${encodeURIComponent(id)}` : '/api/admin/products', {
+      method: id ? 'PATCH' : 'POST',
+      body: JSON.stringify(product),
+    });
+    productDialog.close();
+    await renderProducts();
+    showToast(id ? 'Product updated' : 'Product added');
+  } catch (error) {
+    showToast(error.message || 'Unable to save product');
+  }
 });
 
 document.querySelector('#new-product').addEventListener('click', () => openProduct());
 document.querySelector('#close-product-dialog').addEventListener('click', () => productDialog.close());
 document.querySelector('#cancel-product').addEventListener('click', () => productDialog.close());
-document.querySelector('#reset-catalog').addEventListener('click', () => {
+document.querySelector('#reset-catalog').addEventListener('click', async () => {
   if (!window.confirm('Reset the catalog to the original demo products?')) return;
-  saveProducts(defaultProducts);
-  renderProducts();
-  showToast('Demo catalog restored');
+  try {
+    const response = await window.MorrowApi.apiRequest('/api/admin/products/reset', { method: 'POST' });
+    adminProducts = Array.isArray(response.products) ? response.products : [];
+    await renderProducts();
+    showToast('Demo catalog restored');
+  } catch (error) {
+    showToast(error.message || 'Unable to reset the catalog');
+  }
 });
 document.querySelectorAll('.workspace-tab').forEach((tab) => tab.addEventListener('click', () => {
   document.querySelectorAll('.workspace-tab').forEach((item) => item.classList.toggle('active', item === tab));
@@ -382,7 +525,7 @@ document.querySelectorAll('.workspace-tab').forEach((tab) => tab.addEventListene
 }));
 
 async function refreshAdminDashboard() {
-  renderProducts();
+  await renderProducts();
   await renderSubmissions();
   await renderOrders();
   await renderUsers();
@@ -392,4 +535,3 @@ async function refreshAdminDashboard() {
 document.addEventListener('morrow-admin-auth-change', () => {
   refreshAdminDashboard();
 });
-refreshAdminDashboard();

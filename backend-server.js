@@ -140,7 +140,7 @@ async function initializeDatabase() {
     if (missingTables.length) {
       throw new Error(`PostgreSQL schema is missing tables: ${missingTables.join(', ')}. Apply the Supabase migration before starting the API.`);
     }
-    await runSql("ALTER TABLE users ADD COLUMN IF NOT EXISTS phone TEXT NOT NULL DEFAULT ''; ALTER TABLE users ADD COLUMN IF NOT EXISTS address TEXT NOT NULL DEFAULT '';");
+    await runSql("ALTER TABLE users ADD COLUMN IF NOT EXISTS phone TEXT NOT NULL DEFAULT ''; ALTER TABLE users ADD COLUMN IF NOT EXISTS address TEXT NOT NULL DEFAULT ''; ALTER TABLE products ADD COLUMN IF NOT EXISTS vendor TEXT NOT NULL DEFAULT 'Morrow'; UPDATE products SET vendor = 'Morrow' WHERE vendor IS NULL OR vendor = '';");
   } else {
     const schema = fs.readFileSync(schemaPath, 'utf8');
     childProcess.execFileSync(sqlitePath, [databasePath], { input: schema, encoding: 'utf8' });
@@ -151,6 +151,10 @@ async function initializeDatabase() {
     if (!productColumns.includes('slug')) {
       childProcess.execFileSync(sqlitePath, [databasePath], { input: 'ALTER TABLE products RENAME TO products_legacy;', encoding: 'utf8' });
       childProcess.execFileSync(sqlitePath, [databasePath], { input: schema, encoding: 'utf8' });
+    }
+    if (!productColumns.includes('vendor')) {
+      await runSql("ALTER TABLE products ADD COLUMN vendor TEXT NOT NULL DEFAULT 'Morrow';");
+      await runSql("UPDATE products SET vendor = 'Morrow' WHERE vendor IS NULL OR vendor = '';");
     }
     for (const product of seedProducts) {
       await runSql(`INSERT OR IGNORE INTO products (slug, name, description, category, price_cents, image_url, image_alt, meta, tag, sort_order) VALUES (${product.map(sqlValue).join(', ')});`);
@@ -228,6 +232,62 @@ function mapProduct(product) {
     imageAlt: product.image_alt,
     meta: product.meta,
     tag: product.tag,
+    vendor: product.vendor || 'Morrow',
+  };
+}
+
+function mapAdminProduct(product) {
+  return {
+    ...mapProduct(product),
+    vendor: product.vendor || 'Morrow',
+    published: Boolean(product.published),
+    sortOrder: Number(product.sort_order),
+    createdAt: product.created_at,
+  };
+}
+
+function slugifyProductName(name) {
+  return String(name)
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '') || 'product';
+}
+
+function parseProductInput(body) {
+  const name = String(body.name || '').trim();
+  const category = String(body.category || '').trim().toLowerCase();
+  const description = String(body.description || '').trim();
+  const image = String(body.image || '').trim();
+  const meta = String(body.meta || '').trim();
+  const vendor = String(body.vendor || '').trim();
+  const price = Number(body.price);
+  let imageUrl;
+
+  try {
+    imageUrl = new URL(image);
+  } catch {
+    imageUrl = null;
+  }
+
+  if (!name || !category || !description || !meta || !imageUrl || !['http:', 'https:'].includes(imageUrl.protocol) || !Number.isFinite(price) || price < 0) {
+    return { error: 'Name, category, non-negative price, description, material, and a valid image URL are required.' };
+  }
+
+  return {
+    product: {
+      name,
+      category,
+      description,
+      image,
+      imageAlt: String(body.imageAlt || name).trim(),
+      meta,
+      tag: String(body.tag || '').trim(),
+      vendor: vendor || 'Morrow',
+      priceCents: Math.round(price * 100),
+      published: body.published === undefined ? true : Boolean(body.published),
+    },
   };
 }
 
@@ -329,15 +389,114 @@ async function handleApi(request, response, requestUrl) {
     return true;
   }
 
+  if (requestUrl.pathname === '/api/admin/products' && request.method === 'GET') {
+    if (!await requireUser(response, request, 'admin')) return true;
+    const rows = await runSql('SELECT slug, name, description, category, price_cents, image_url, image_alt, meta, tag, vendor, published, sort_order, created_at FROM products ORDER BY sort_order, id;');
+    sendJson(response, 200, { products: rows.map(mapAdminProduct) });
+    return true;
+  }
+
+  if (requestUrl.pathname === '/api/admin/products' && request.method === 'POST') {
+    if (!await requireUser(response, request, 'admin')) return true;
+    const { product, error } = parseProductInput(await readBody(request));
+    if (error) {
+      sendJson(response, 400, { error });
+      return true;
+    }
+
+    const baseSlug = slugifyProductName(product.name);
+    let slug = baseSlug;
+    let suffix = 2;
+    while ((await runSql(`SELECT id FROM products WHERE slug = ${sqlValue(slug)} LIMIT 1;`)).length) {
+      slug = `${baseSlug}-${suffix}`;
+      suffix += 1;
+    }
+    const maxOrder = (await runSql('SELECT MAX(sort_order) AS max_sort_order FROM products;'))[0]?.max_sort_order;
+    const sortOrder = Number(maxOrder || 0) + 1;
+    const publishedValue = isPostgresMode ? (product.published ? 'TRUE' : 'FALSE') : (product.published ? '1' : '0');
+    await runSql(`INSERT INTO products (slug, name, description, category, price_cents, image_url, image_alt, meta, tag, vendor, published, sort_order)
+      VALUES (${sqlValue(slug)}, ${sqlValue(product.name)}, ${sqlValue(product.description)}, ${sqlValue(product.category)}, ${product.priceCents}, ${sqlValue(product.image)}, ${sqlValue(product.imageAlt)}, ${sqlValue(product.meta)}, ${sqlValue(product.tag)}, ${sqlValue(product.vendor || 'Morrow')}, ${publishedValue}, ${sortOrder});`);
+    const row = (await runSql(`SELECT slug, name, description, category, price_cents, image_url, image_alt, meta, tag, vendor, published, sort_order, created_at FROM products WHERE slug = ${sqlValue(slug)} LIMIT 1;`))[0];
+    sendJson(response, 201, { product: mapAdminProduct(row) });
+    return true;
+  }
+
+  if (requestUrl.pathname === '/api/admin/products/order' && request.method === 'PATCH') {
+    if (!await requireUser(response, request, 'admin')) return true;
+    const body = await readBody(request);
+    const slugs = Array.isArray(body.products) ? body.products.map((slug) => String(slug)) : [];
+    if (slugs.length > 2000 || new Set(slugs).size !== slugs.length) {
+      sendJson(response, 400, { error: 'Provide a unique, valid product order.' });
+      return true;
+    }
+    for (const slug of slugs) {
+      if (!(await runSql(`SELECT id FROM products WHERE slug = ${sqlValue(slug)} LIMIT 1;`)).length) {
+        sendJson(response, 404, { error: `Product not found: ${slug}` });
+        return true;
+      }
+    }
+    for (const [sortOrder, slug] of slugs.entries()) {
+      await runSql(`UPDATE products SET sort_order = ${sortOrder}, updated_at = datetime('now') WHERE slug = ${sqlValue(slug)};`);
+    }
+    sendJson(response, 200, { ok: true });
+    return true;
+  }
+
+  if (requestUrl.pathname === '/api/admin/products/reset' && request.method === 'POST') {
+    if (!await requireUser(response, request, 'admin')) return true;
+    const hiddenValue = isPostgresMode ? 'FALSE' : '0';
+    await runSql(`UPDATE products SET published = ${hiddenValue};`);
+    for (const [index, seed] of seedProducts.entries()) {
+      const [slug, name, description, category, priceCents, image, imageAlt, meta, tag] = seed;
+      const existing = (await runSql(`SELECT id FROM products WHERE slug = ${sqlValue(slug)} LIMIT 1;`))[0];
+      if (existing) {
+        await runSql(`UPDATE products SET name = ${sqlValue(name)}, description = ${sqlValue(description)}, category = ${sqlValue(category)}, price_cents = ${Number(priceCents)}, image_url = ${sqlValue(image)}, image_alt = ${sqlValue(imageAlt)}, meta = ${sqlValue(meta)}, tag = ${sqlValue(tag)}, vendor = 'Morrow', published = ${isPostgresMode ? 'TRUE' : '1'}, sort_order = ${Number(index + 1)}, updated_at = datetime('now') WHERE slug = ${sqlValue(slug)};`);
+      } else {
+        await runSql(`INSERT INTO products (slug, name, description, category, price_cents, image_url, image_alt, meta, tag, vendor, published, sort_order) VALUES (${sqlValue(slug)}, ${sqlValue(name)}, ${sqlValue(description)}, ${sqlValue(category)}, ${Number(priceCents)}, ${sqlValue(image)}, ${sqlValue(imageAlt)}, ${sqlValue(meta)}, ${sqlValue(tag)}, 'Morrow', ${isPostgresMode ? 'TRUE' : '1'}, ${Number(index + 1)});`);
+      }
+    }
+    const rows = await runSql('SELECT slug, name, description, category, price_cents, image_url, image_alt, meta, tag, vendor, published, sort_order, created_at FROM products ORDER BY sort_order, id;');
+    sendJson(response, 200, { products: rows.map(mapAdminProduct) });
+    return true;
+  }
+
+  const adminProductMatch = requestUrl.pathname.match(/^\/api\/admin\/products\/([^/]+)$/);
+  if (adminProductMatch && (request.method === 'PATCH' || request.method === 'DELETE')) {
+    if (!await requireUser(response, request, 'admin')) return true;
+    const slug = decodeURIComponent(adminProductMatch[1]);
+    const existing = (await runSql(`SELECT id, tag, vendor, sort_order FROM products WHERE slug = ${sqlValue(slug)} LIMIT 1;`))[0];
+    if (!existing) {
+      sendJson(response, 404, { error: 'Product not found.' });
+      return true;
+    }
+
+    if (request.method === 'DELETE') {
+      await runSql(`DELETE FROM products WHERE slug = ${sqlValue(slug)};`);
+      sendJson(response, 200, { deleted: true, id: slug });
+      return true;
+    }
+
+    const { product, error } = parseProductInput(await readBody(request));
+    if (error) {
+      sendJson(response, 400, { error });
+      return true;
+    }
+    const publishedValue = isPostgresMode ? (product.published ? 'TRUE' : 'FALSE') : (product.published ? '1' : '0');
+    await runSql(`UPDATE products SET name = ${sqlValue(product.name)}, description = ${sqlValue(product.description)}, category = ${sqlValue(product.category)}, price_cents = ${product.priceCents}, image_url = ${sqlValue(product.image)}, image_alt = ${sqlValue(product.imageAlt)}, meta = ${sqlValue(product.meta)}, tag = ${sqlValue(product.tag || existing.tag)}, vendor = ${sqlValue(product.vendor || existing.vendor || 'Morrow')}, published = ${publishedValue}, updated_at = datetime('now') WHERE slug = ${sqlValue(slug)};`);
+    const row = (await runSql(`SELECT slug, name, description, category, price_cents, image_url, image_alt, meta, tag, vendor, published, sort_order, created_at FROM products WHERE slug = ${sqlValue(slug)} LIMIT 1;`))[0];
+    sendJson(response, 200, { product: mapAdminProduct(row) });
+    return true;
+  }
+
   if (requestUrl.pathname === '/api/products' && request.method === 'GET') {
-    const products = (await runSql('SELECT slug, name, description, category, price_cents, image_url, image_alt, meta, tag FROM products WHERE published = 1 ORDER BY sort_order, id;')).map(mapProduct);
+    const products = (await runSql('SELECT slug, name, description, category, price_cents, image_url, image_alt, meta, tag, vendor FROM products WHERE published = 1 ORDER BY sort_order, id;')).map(mapProduct);
     sendJson(response, 200, { products });
     return true;
   }
 
   const productMatch = requestUrl.pathname.match(/^\/api\/products\/([^/]+)$/);
   if (productMatch && request.method === 'GET') {
-    const product = (await runSql(`SELECT slug, name, description, category, price_cents, image_url, image_alt, meta, tag FROM products WHERE slug = ${sqlValue(decodeURIComponent(productMatch[1]))} AND published = 1 LIMIT 1;`))[0];
+    const product = (await runSql(`SELECT slug, name, description, category, price_cents, image_url, image_alt, meta, tag, vendor FROM products WHERE slug = ${sqlValue(decodeURIComponent(productMatch[1]))} AND published = 1 LIMIT 1;`))[0];
     if (!product) {
       sendJson(response, 404, { error: 'Product not found' });
       return true;
@@ -614,7 +773,8 @@ async function handleApi(request, response, requestUrl) {
 
     const rows = await runSql(`SELECT id, seller_email, product_json, status, created_at FROM seller_submissions WHERE user_id = ${Number(user.id)} ORDER BY created_at DESC, id DESC;`);
     const submissions = rows.map((row) => {
-      const product = JSON.parse(row.product_json || '{}');
+      let product = {};
+      try { product = JSON.parse(row.product_json || '{}'); } catch {}
       return {
         id: Number(row.id),
         seller: product.seller || row.seller_email,
@@ -626,6 +786,8 @@ async function handleApi(request, response, requestUrl) {
         description: product.description || '',
         material: product.material || '',
         status: row.status,
+        reason: product.rejectionReason || '',
+        productSlug: product.approvedSlug || '',
         submittedAt: row.created_at,
       };
     });
@@ -637,21 +799,170 @@ async function handleApi(request, response, requestUrl) {
   if (requestUrl.pathname === '/api/admin/submissions' && request.method === 'GET') {
     if (!await requireUser(response, request, 'admin')) return true;
     const rows = await runSql('SELECT id, seller_email, product_json, status, created_at FROM seller_submissions ORDER BY created_at DESC, id DESC;');
-    const submissions = rows.map((row) => ({
-      id: Number(row.id),
-      seller: JSON.parse(row.product_json).seller || row.seller_email,
-      email: JSON.parse(row.product_json).email || row.seller_email,
-      name: JSON.parse(row.product_json).name || 'Untitled item',
-      category: JSON.parse(row.product_json).category || 'uncategorized',
-      price: Number(JSON.parse(row.product_json).price || 0),
-      image: JSON.parse(row.product_json).image || '',
-      description: JSON.parse(row.product_json).description || '',
-      material: JSON.parse(row.product_json).material || '',
-      status: row.status,
-      submittedAt: row.created_at,
-    }));
+    const submissions = rows.map((row) => {
+      let product = {};
+      try { product = JSON.parse(row.product_json || '{}'); } catch {}
+      return {
+        id: Number(row.id),
+        seller: product.seller || row.seller_email,
+        email: product.email || row.seller_email,
+        name: product.name || 'Untitled item',
+        category: product.category || 'uncategorized',
+        price: Number(product.price || 0),
+        image: product.image || '',
+        description: product.description || '',
+        material: product.material || '',
+        status: row.status,
+        reason: product.rejectionReason || '',
+        productSlug: product.approvedSlug || '',
+        submittedAt: row.created_at,
+      };
+    });
     sendJson(response, 200, { submissions });
     return true;
+  }
+
+  const adminSubmissionActionMatch = requestUrl.pathname.match(/^\/api\/admin\/submissions\/(\d+)\/(approve|reject)$/);
+  const adminSubmissionMatch = requestUrl.pathname.match(/^\/api\/admin\/submissions\/(\d+)$/);
+
+  if ((adminSubmissionActionMatch && request.method === 'POST') || (adminSubmissionMatch && (request.method === 'POST' || request.method === 'PATCH'))) {
+    if (!await requireUser(response, request, 'admin')) return true;
+
+    const submissionId = Number(adminSubmissionActionMatch ? adminSubmissionActionMatch[1] : adminSubmissionMatch[1]);
+    const submissionRow = (await runSql(`SELECT id, user_id, seller_email, product_json, status, created_at FROM seller_submissions WHERE id = ${submissionId} LIMIT 1;`))[0];
+
+    if (!submissionRow) {
+      sendJson(response, 404, { error: 'Submission not found.' });
+      return true;
+    }
+
+    let action;
+    let body = {};
+    if (adminSubmissionActionMatch) {
+      action = adminSubmissionActionMatch[2];
+      try { body = await readBody(request); } catch {}
+    } else {
+      body = await readBody(request);
+      action = String(body.action || body.status || '').trim().toLowerCase();
+      if (action === 'approved') action = 'approve';
+      if (action === 'rejected') action = 'reject';
+    }
+
+    if (action !== 'approve' && action !== 'reject') {
+      sendJson(response, 400, { error: 'Invalid review action. Action must be approve or reject.' });
+      return true;
+    }
+
+    let productData = {};
+    try {
+      productData = JSON.parse(submissionRow.product_json || '{}');
+    } catch {
+      productData = {};
+    }
+
+    if (action === 'approve') {
+      if (submissionRow.status === 'approved') {
+        sendJson(response, 400, { error: 'Submission has already been approved.' });
+        return true;
+      }
+
+      const { product, error } = parseProductInput({
+        name: body.name || productData.name,
+        category: body.category || productData.category,
+        price: body.price !== undefined ? body.price : productData.price,
+        image: body.image || productData.image,
+        description: body.description || productData.description,
+        meta: body.meta || body.material || productData.material || productData.meta || 'Vendor piece',
+        imageAlt: body.imageAlt || productData.imageAlt || productData.name,
+        tag: body.tag || productData.tag || 'Vendor',
+        vendor: body.vendor || productData.seller || submissionRow.seller_email || 'Vendor',
+        published: body.published !== undefined ? body.published : true,
+      });
+
+      if (error) {
+        sendJson(response, 400, { error: `Cannot approve submission: ${error}` });
+        return true;
+      }
+
+      const baseSlug = slugifyProductName(product.name);
+      let slug = baseSlug;
+      let suffix = 2;
+      while ((await runSql(`SELECT id FROM products WHERE slug = ${sqlValue(slug)} LIMIT 1;`)).length) {
+        slug = `${baseSlug}-${suffix}`;
+        suffix += 1;
+      }
+
+      const maxOrder = (await runSql('SELECT MAX(sort_order) AS max_sort_order FROM products;'))[0]?.max_sort_order;
+      const sortOrder = Number(maxOrder || 0) + 1;
+      const publishedValue = isPostgresMode ? (product.published ? 'TRUE' : 'FALSE') : (product.published ? '1' : '0');
+
+      const sellerVendor = String(product.vendor || productData.seller || submissionRow.seller_email || 'Vendor').trim();
+
+      await runSql(`INSERT INTO products (slug, name, description, category, price_cents, image_url, image_alt, meta, tag, vendor, published, sort_order)
+        VALUES (${sqlValue(slug)}, ${sqlValue(product.name)}, ${sqlValue(product.description)}, ${sqlValue(product.category)}, ${product.priceCents}, ${sqlValue(product.image)}, ${sqlValue(product.imageAlt)}, ${sqlValue(product.meta)}, ${sqlValue(product.tag)}, ${sqlValue(sellerVendor)}, ${publishedValue}, ${sortOrder});`);
+
+      const productRow = (await runSql(`SELECT slug, name, description, category, price_cents, image_url, image_alt, meta, tag, vendor, published, sort_order, created_at FROM products WHERE slug = ${sqlValue(slug)} LIMIT 1;`))[0];
+      const createdProduct = mapAdminProduct(productRow);
+
+      productData.status = 'approved';
+      productData.approvedSlug = slug;
+      productData.reviewedAt = new Date().toISOString();
+
+      await runSql(`UPDATE seller_submissions SET status = 'approved', product_json = ${sqlValue(JSON.stringify(productData))}, updated_at = datetime('now') WHERE id = ${submissionId};`);
+
+      sendJson(response, 200, {
+        ok: true,
+        submission: {
+          id: submissionId,
+          seller: productData.seller || submissionRow.seller_email,
+          email: productData.email || submissionRow.seller_email,
+          name: productData.name || 'Untitled item',
+          category: productData.category || 'uncategorized',
+          price: Number(productData.price || 0),
+          image: productData.image || '',
+          description: productData.description || '',
+          material: productData.material || '',
+          status: 'approved',
+          productSlug: slug,
+          submittedAt: submissionRow.created_at,
+        },
+        product: createdProduct,
+      });
+      return true;
+    }
+
+    if (action === 'reject') {
+      if (submissionRow.status === 'approved') {
+        sendJson(response, 400, { error: 'Cannot reject an already approved submission.' });
+        return true;
+      }
+
+      const reason = String(body.reason || body.notes || '').trim();
+      productData.status = 'rejected';
+      productData.rejectionReason = reason;
+      productData.reviewedAt = new Date().toISOString();
+
+      await runSql(`UPDATE seller_submissions SET status = 'rejected', product_json = ${sqlValue(JSON.stringify(productData))}, updated_at = datetime('now') WHERE id = ${submissionId};`);
+
+      sendJson(response, 200, {
+        ok: true,
+        submission: {
+          id: submissionId,
+          seller: productData.seller || submissionRow.seller_email,
+          email: productData.email || submissionRow.seller_email,
+          name: productData.name || 'Untitled item',
+          category: productData.category || 'uncategorized',
+          price: Number(productData.price || 0),
+          image: productData.image || '',
+          description: productData.description || '',
+          material: productData.material || '',
+          status: 'rejected',
+          reason,
+          submittedAt: submissionRow.created_at,
+        },
+      });
+      return true;
+    }
   }
 
   if (requestUrl.pathname === '/api/admin/orders' && request.method === 'GET') {
@@ -679,7 +990,7 @@ const server = http.createServer(async (request, response) => {
       'Access-Control-Allow-Origin': resolveAllowedOrigin(request.headers.origin),
       'Access-Control-Allow-Credentials': 'true',
       'Access-Control-Allow-Headers': 'Content-Type',
-      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+      'Access-Control-Allow-Methods': 'GET, POST, PATCH, DELETE, OPTIONS',
     });
     response.end();
     return;
